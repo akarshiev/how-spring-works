@@ -1,0 +1,15 @@
+<bean id="studentBean" class="org.example.springcore.Students.Student">
+    <property name="subjects">
+        <list>
+            <value>Math</value>
+            <value>Science</value>
+        </list>
+    </property>
+
+    <property name="grades">
+        <map>
+            <entry key="Math" value="100"/>
+            <entry key="Science" value="95"/>
+        </map>
+    </property>
+</bean>
