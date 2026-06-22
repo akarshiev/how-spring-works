@@ -1,162 +1,181 @@
-# Method Security - @PreAuthorize, @Secured
+# Method Security — @PreAuthorize, @Secured
 
-## Method Security nima?
+URL darajasida himoya yetarli bo'lmagan hollarda — metod darajasida himoya ishlatiladi. `SecurityFilterChain` URL'ni himoyalaydi. `@PreAuthorize` konkret metodga kirish ruxsatini belgilaydi.
 
-URL larni emas, balki metodlarni himoya qilish.
-
-```java
-@RestController
-@RequestMapping("/api/users")
-public class UserController {
-    
-    @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")  // BU METODNI FAQAT ADMIN ISHLATA OLSIN
-    public User getUser(@PathVariable Long id) {
-        return userService.findById(id);
-    }
-}
-```
-
-URL /api/users/5 ga kirishda URL filteri ishlaydi, lekin @PreAuthorize metod darajasida ishlaydi.
-
-## @EnableMethodSecurity
-
-Avval bu annotation ni qoshish kerak:
+## Yoqish
 
 ```java
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity  // Method Security ni yoqish
-public class SecurityConfig {
-    // ...
-}
+@EnableMethodSecurity  // Method security ni yoqish
+public class SecurityConfig { ... }
 ```
 
-## @PreAuthorize - Metodni chaqirishdan oldin tekshirish
-
-Eng kop ishlatiladigan annotation:
+## @PreAuthorize — chaqirishdan oldin tekshirish
 
 ```java
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
-    
+
     // Faqat ADMIN
-    @GetMapping("/admin")
-    @PreAuthorize("hasRole('ADMIN')")
-    public String adminOnly() {
-        return "Faqat adminlar kora oladi";
-    }
-    
-    // ADMIN yoki USER
     @GetMapping("/all")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
-    public String allUsers() {
-        return "Hamma login qilganlar kora oladi";
-    }
-    
-    // Faqat oz malumotlarini kora oladi
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<UserResponse> getAllUsers() { ... }
+
+    // ADMIN yoki USER
     @GetMapping("/{id}")
-    @PreAuthorize("#id == authentication.principal.id")
-    public User getUser(@PathVariable Long id) {
-        return userService.findById(id);
-    }
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public UserResponse getUser(@PathVariable Long id) { ... }
+
+    // Faqat o'z ma'lumotlarini yoki Admin ko'rishi mumkin
+    @GetMapping("/{id}/profile")
+    @PreAuthorize("#id == authentication.principal.id or hasRole('ADMIN')")
+    public UserProfile getProfile(@PathVariable Long id) { ... }
+
+    // Faqat login qilgan
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public UserResponse getCurrentUser() { ... }
+
+    // Hech kim kira olmasin
+    @DeleteMapping("/all")
+    @PreAuthorize("denyAll()")
+    public void deleteAll() { ... }
 }
 ```
 
-## @PostAuthorize - Metod chaqirilgandan keyin tekshirish
+## Service darajasida
 
-```java
-@GetMapping("/{id}")
-@PostAuthorize("returnObject.owner == authentication.principal.username")
-public Document getDocument(@PathVariable Long id) {
-    // Metod ishlaydi, lekin natija tekshiriladi
-    return documentService.findById(id);
-    // Agar hujjat egasi hozirgi foydalanuvchi bolmasa -> AccessDeniedException
-}
-```
-
-## @Secured - Eski usul
-
-```java
-@Secured("ROLE_ADMIN")  // Faqat ADMIN
-public void adminTask() { }
-
-@Secured({"ROLE_USER", "ROLE_ADMIN"})  // USER yoki ADMIN
-public void userTask() { }
-```
-
-## @RolesAllowed - Java EE standarti
-
-```java
-@RolesAllowed("ADMIN")
-public void adminTask() { }
-```
-
-## SpEL (Spring Expression Language)
-
-@PreAuthorize ichida SpEL ishlatish mumkin:
-
-```java
-// SpEL ifodalari
-@PreAuthorize("hasRole('ADMIN')")                          // Rol tekshirish
-@PreAuthorize("hasAuthority('WRITE')")                     // Authority tekshirish
-@PreAuthorize("#userId == authentication.principal.id")   // Parametrni tekshirish
-@PreAuthorize("isAuthenticated()")                         // Login qilganmi?
-@PreAuthorize("permitAll()")                              // Hamma kirishi mumkin
-@PreAuthorize("denyAll()")                                // Hech kim kira olmaydi
-
-// Murakkab ifodalar
-@PreAuthorize("hasRole('ADMIN') or (#userId == principal.id)")
-@PreAuthorize("hasRole('ADMIN') and isFullyAuthenticated()")
-```
-
-## Service darajasida himoya
+Method security Controller'da emas, Service'da qo'yish — yanada mustahkam himoya:
 
 ```java
 @Service
 public class DocumentService {
-    
+
     @PreAuthorize("hasRole('ADMIN')")
-    public Document create(Document document) {
-        return repository.save(document);
-    }
-    
-    @PreAuthorize("#id == authentication.principal.id or hasRole('ADMIN')")
-    public Document findById(Long id) {
-        return repository.findById(id).orElseThrow();
-    }
-    
-    @PreAuthorize("hasRole('ADMIN')")
-    public void delete(Long id) {
-        repository.deleteById(id);
-    }
+    public Document create(CreateDocumentRequest request) { ... }
+
+    @PreAuthorize("@documentSecurity.canRead(#id, authentication)")
+    public Document findById(Long id) { ... }
+
+    @PreAuthorize("hasRole('ADMIN') or @documentSecurity.isOwner(#id, authentication)")
+    public void delete(Long id) { ... }
 }
 ```
 
-## Custom Permission Evaluator
-
-Murakkab tekshirishlar uchun:
+`@documentSecurity` — Spring bean. `@` prefiksi bean nomini bildiradi:
 
 ```java
-@Component
-public class DocumentPermissionEvaluator {
-    
-    public boolean hasAccess(Long documentId, Authentication auth) {
-        // Murakkab logika
+@Component("documentSecurity")
+public class DocumentSecurityService {
+
+    private final DocumentRepository documentRepository;
+
+    public boolean canRead(Long documentId, Authentication auth) {
         Document doc = documentRepository.findById(documentId).orElse(null);
         if (doc == null) return false;
-        return doc.getOwner().equals(auth.getName()) || 
-               auth.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        if (doc.isPublic()) return true;
+
+        UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
+        return doc.getOwnerId().equals(principal.getId());
+    }
+
+    public boolean isOwner(Long documentId, Authentication auth) {
+        Document doc = documentRepository.findById(documentId).orElse(null);
+        if (doc == null) return false;
+
+        UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
+        return doc.getOwnerId().equals(principal.getId());
     }
 }
 ```
 
-## Xulosa
+## @PostAuthorize — bajarilgandan keyin tekshirish
 
-- @PreAuthorize -> metod chaqirilishidan oldin tekshiradi
-- @PostAuthorize -> metod ishlagandan keyin tekshiradi
-- @Secured -> eski usul
-- SpEL -> murakkab tekshirishlar
-- @EnableMethodSecurity -> birinchi qoshish kerak
-- Service yoki Controller darajasida ishlatish mumkin
+Metod natijasini tekshirish uchun:
+
+```java
+@GetMapping("/{id}")
+@PostAuthorize("returnObject.ownerId == authentication.principal.id or hasRole('ADMIN')")
+public Document getDocument(@PathVariable Long id) {
+    return documentService.findById(id);
+    // Metod ishlaydi, lekin qaytgan ob'ekt tekshiriladi
+    // Agar egasi emas va admin emas bo'lsa — AccessDeniedException
+}
+```
+
+## @PreFilter va @PostFilter — to'plamlarni filtrlash
+
+```java
+// Kirayotgan ro'yxatni filtrlash
+@PreFilter("filterObject.ownerId == authentication.principal.id")
+public List<Document> archiveDocuments(List<Document> documents) {
+    // Faqat o'ziga tegishli hujjatlar o'tadi
+}
+
+// Qaytayotgan ro'yxatni filtrlash
+@PostFilter("filterObject.ownerId == authentication.principal.id or hasRole('ADMIN')")
+public List<Document> findAll() {
+    return documentRepository.findAll();
+    // Hamma oladi, lekin faqat o'ziga tegishlilar qaytariladi
+}
+```
+
+## @Secured — sodda usul
+
+```java
+@Secured("ROLE_ADMIN")  // Faqat bir rol
+public void adminTask() { }
+
+@Secured({"ROLE_USER", "ROLE_ADMIN"})  // Bir nechta rol
+public void userTask() { }
+```
+
+`@PreAuthorize` nisbatan kam imkoniyatli — SpEL ifoda yo'q. Oddiy hollarda ishlatiladi.
+
+## SpEL ifodalari
+
+`@PreAuthorize` ichida Spring Expression Language:
+
+```java
+// Rol va authority
+@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('USER', 'MODERATOR')")
+@PreAuthorize("hasAuthority('WRITE_DOCUMENTS')")
+
+// Autentifikatsiya holati
+@PreAuthorize("isAuthenticated()")
+@PreAuthorize("isFullyAuthenticated()")  // Remember Me emas
+@PreAuthorize("isAnonymous()")
+
+// Parametr bilan
+@PreAuthorize("#userId == authentication.principal.id")
+public UserProfile getProfile(@P("userId") Long userId) { ... }
+
+// Authentication ob'ektiga kirish
+@PreAuthorize("authentication.principal.username == #username")
+
+// Bean chaqirish
+@PreAuthorize("@accessControl.hasAccess(#id, authentication)")
+
+// Murakkab ifoda
+@PreAuthorize("hasRole('ADMIN') or (#userId == authentication.principal.id and hasRole('USER'))")
+```
+
+## Xatolikni ushlash
+
+Method security xatosi `AccessDeniedException` tashlayd — `@ControllerAdvice`'da ushlanadi:
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity
+            .status(HttpStatus.FORBIDDEN)
+            .body(new ErrorResponse(403, "Bu amalni bajarish uchun ruxsatingiz yo'q"));
+    }
+}
+```

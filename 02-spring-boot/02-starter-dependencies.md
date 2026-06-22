@@ -1,150 +1,125 @@
-# Starter Dependencies - Starterlar qanday ishlaydi?
+# Starter Dependencies — Starterlar qanday ishlaydi?
 
-## Starter nima?
+Starter — bir nechta bog'liq kutubxonalarni bitta dependency sifatida taqdim etuvchi mexanizm.
 
-Starter - bu bir nechta dependency larni birlashtirgan bitta dependency.
+## Muammo: qo'lda boshqarish
 
-Oddiy qilib: **Starter = bir nechta library ni bir paketga yig'ib berish**.
-
-## Starter nega kerak?
-
-Springsiz web ilova yaratish uchun:
+Spring Boot'siz web ilova uchun qo'lda ko'p dependency qo'shish kerak edi:
 
 ```xml
-<!-- Spring Bootsiz - 10 ta dependency ni ozingiz qoshasiz -->
 <dependency>
     <groupId>org.springframework</groupId>
     <artifactId>spring-webmvc</artifactId>
+    <version>6.1.0</version>
 </dependency>
 <dependency>
     <groupId>org.springframework</groupId>
     <artifactId>spring-context</artifactId>
-</dependency>
-<dependency>
-    <groupId>javax.servlet</groupId>
-    <artifactId>javax.servlet-api</artifactId>
+    <version>6.1.0</version>
 </dependency>
 <dependency>
     <groupId>com.fasterxml.jackson.core</groupId>
     <artifactId>jackson-databind</artifactId>
+    <version>2.16.0</version>
 </dependency>
-<!-- ... va yana 6 ta library ... -->
+<!-- ... va yana bir nechta ... -->
 ```
 
-Spring Boot bilan:
+Versiyalar bir-biriga mos kelishi ham siz zimmasida.
+
+## Yechim: Starter
 
 ```xml
-<!-- 1 ta starter = 10 ta library -->
+<!-- 1 ta starter = ko'p kutubxona, moslashtiriladn versiyalar -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-web</artifactId>
 </dependency>
 ```
 
-## Starter ichida nima bor?
+`spring-boot-starter-web` ichida nima bor?
 
-spring-boot-starter-web ni ichiga qarasak:
-
-```xml
-<!-- spring-boot-starter-web ning pom.xml ichida -->
-<dependencies>
-    <dependency>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter</artifactId>  <!-- asos -->
-    </dependency>
-    <dependency>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-tomcat</artifactId>  <!-- server -->
-    </dependency>
-    <dependency>
-        <groupId>org.springframework</groupId>
-        <artifactId>spring-webmvc</artifactId>  <!-- web framework -->
-    </dependency>
-    <dependency>
-        <groupId>com.fasterxml.jackson.core</groupId>
-        <artifactId>jackson-databind</artifactId>  <!-- JSON -->
-    </dependency>
-    <!-- ... va yana 10 ga yaqin library -->
-</dependencies>
+```
+spring-boot-starter-web
+  +-- spring-boot-starter          (Spring Boot asosi)
+  +-- spring-boot-starter-tomcat   (Embedded Tomcat)
+  +-- spring-webmvc                (Spring MVC)
+  +-- jackson-databind             (JSON)
+  +-- jackson-datatype-jdk8        (Java 8 tiplari)
+  +-- jackson-module-parameter-names
 ```
 
-1 ta starter qoshsangiz -> Spring avtomatik ravishda 10-15 ta library ni qoshib oladi.
+Bitta qator bilan 7+ kutubxona keladi, versiyalari mos.
 
-## Eng ko'p ishlatiladigan starterlar
+## Eng ko'p ishlatiladigan Starterlar
 
 | Starter | Nima qiladi? |
-|---------|------------|
-| spring-boot-starter-web | REST API va web ilovalar |
-| spring-boot-starter-data-jpa | Malumotlar bazasi bilan ishlash |
-| spring-boot-starter-security | Xavfsizlik |
-| spring-boot-starter-test | Test (JUnit, Mockito, ...) |
-| spring-boot-starter-thymeleaf | Frontend (HTML shablonlar) |
-| spring-boot-starter-mail | Email yuborish |
-| spring-boot-starter-validation | Malumotlarni tekshirish |
-| spring-boot-starter-actuator | Monitoring va diagnostika |
+|---------|-------------|
+| `spring-boot-starter-web` | REST API va web ilovalar |
+| `spring-boot-starter-data-jpa` | JPA + Hibernate + DataSource |
+| `spring-boot-starter-security` | Spring Security |
+| `spring-boot-starter-test` | JUnit 5, Mockito, AssertJ |
+| `spring-boot-starter-validation` | Bean Validation |
+| `spring-boot-starter-mail` | Email yuborish |
+| `spring-boot-starter-actuator` | Monitoring va health check |
+| `spring-boot-starter-thymeleaf` | HTML shablonlar |
+| `spring-boot-starter-data-redis` | Redis bilan ishlash |
 
-## Starter + Auto-Configuration
+## Starter + Auto-Configuration birgalikda
 
-Starter va auto-configuration birga ishlaydi.
+Starter kutubxonani classpath'ga qo'shadi. Auto-Configuration esa shu kutubxona borligini ko'rib, sozlamalarni avtomatik qiladi:
 
-Misollar:
+`spring-boot-starter-data-jpa` qo'shildi → Classpath'da `DataSource`, `EntityManager` classlari paydo bo'ldi → `DataSourceAutoConfiguration` va `HibernateJpaAutoConfiguration` ishga tushdi → Siz faqat `application.properties`'da DB URL'ni ko'rsatasiz.
+
+## Spring Boot Parent BOM
+
+`spring-boot-starter-parent` barcha starter versiyalarini boshqaradi:
 
 ```xml
-<!-- 1. Web ilova -->
+<parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.2.0</version>
+</parent>
+
+<!-- Versiya ko'rsatish shart emas — parent hal qiladi -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-web</artifactId>
 </dependency>
-```
-Spring avtomatik: Tomcat, DispatcherServlet, Jackson, ...
-
-```xml
-<!-- 2. Malumotlar bazasi -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-data-jpa</artifactId>
 </dependency>
-<dependency>
-    <groupId>org.postgresql</groupId>
-    <artifactId>postgresql</artifactId>
-</dependency>
 ```
-Spring avtomatik: DataSource, EntityManagerFactory, JPA, ...
+
+## Starter ichidagi versiyani o'zgartirish
+
+Ba'zan starter bilan kelgan versiya siz istaganidan farq qiladi:
 
 ```xml
-<!-- 3. Xavfsizlik -->
+<properties>
+    <!-- Starter bilan kelgan versiyadан farqli PostgreSQL driver -->
+    <postgresql.version>42.6.0</postgresql.version>
+</properties>
+```
+
+Yoki dependency exclusion bilan:
+
+```xml
 <dependency>
     <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-security</artifactId>
+    <artifactId>spring-boot-starter-web</artifactId>
+    <exclusions>
+        <!-- Tomcat o'rniga Undertow ishlatish uchun -->
+        <exclusion>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-undertow</artifactId>
 </dependency>
 ```
-Spring avtomatik: Login formasi, CSRF, ...
-
-## Starter yaratish
-
-Agar siz oz starteringizni yaratmoqchi bolsangiz:
-
-```xml
-<project>
-    <artifactId>my-starter</artifactId>
-    
-    <dependencies>
-        <dependency>
-            <groupId>com.example</groupId>
-            <artifactId>my-library</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.example</groupId>
-            <artifactId>my-other-library</artifactId>
-        </dependency>
-    </dependencies>
-</project>
-```
-
-## Xulosa
-
-Starter = bir nechta library ni bir joyga yig'ish.
-
-- Bitta starter qoshsangiz -> kop library lar oz-ozidan qoshiladi
-- Starter + auto-configuration -> hamma narsa avtomatik ishlaydi
-- "spring-boot-starter-*" nomi bilan boshlanadi

@@ -1,219 +1,211 @@
-# Request va Response
+# Request va Response — @RequestBody, @ResponseBody, DTO
 
-## @RequestBody - So'rovni qabul qilish
+Foydalanuvchi JSON yuboradi — Spring uni Java ob'ektiga aylantiradi. Spring Java ob'ektini — JSON ga aylantiradi. Bu jarayon Jackson kutubxonasi orqali ishlaydi.
 
-Foydalanuvchi sizga JSON yuboradi -> Spring uni Java obektiga aylantiradi.
-
-Foydalanuvchi yuborgan JSON:
-
-```json
-{
-    "name": "Ali",
-    "email": "ali@example.com",
-    "age": 25
-}
-```
-
-Sizning Java klassingiz:
+## @RequestBody — JSON'dan Java ob'ektiga
 
 ```java
-public class User {
-    private String name;
-    private String email;
-    private int age;
-    
-    // getter va setter lar
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
-    public int getAge() { return age; }
-    public void setAge(int age) { this.age = age; }
-}
-```
+// Client yuboradi:
+// POST /api/users
+// {"name": "Ali", "email": "ali@example.com", "age": 25}
 
-Controllerga qabul qilish:
-
-```java
 @PostMapping("/users")
-public ResponseEntity<User> createUser(@RequestBody User user) {
-    // Spring JSON ni avtomatik ravishda User obektiga aylantiradi
-    System.out.println(user.getName());   // "Ali"
-    System.out.println(user.getEmail());  // "ali@example.com"
-    System.out.println(user.getAge());    // 25
-    
-    User saved = userService.save(user);
-    return ResponseEntity.status(201).body(saved);
+public ResponseEntity<UserResponse> createUser(
+    @RequestBody CreateUserRequest request  // Jackson JSON → Java
+) {
+    System.out.println(request.getName());   // "Ali"
+    System.out.println(request.getEmail());  // "ali@example.com"
+    System.out.println(request.getAge());    // 25
+    ...
 }
 ```
 
-## @ResponseBody - Javobni yuborish
+## DTO — nima va nima uchun?
 
-Spring Java obektni avtomatik ravishda JSON ga aylantiradi.
-
-```java
-@GetMapping("/users/{id}")
-public User getUser(@PathVariable Long id) {
-    // Spring User obektni JSON ga aylantiradi
-    return userService.findById(id);
-    // -> {"id": 1, "name": "Ali", "email": "ali@example.com", "age": 25}
-}
-```
-
-## DTO (Data Transfer Object)
-
-DTO = Malumotlarni tashish uchun obekt. Entity bilan Client orasida turgich vazifasini bajaradi.
-
-### Nega DTO kerak?
-
-Entity ichida malumotlar bor, lekin hammasini clientga yuborish xavfli:
+DTO (Data Transfer Object) — Client va Entity o'rtasida turgich. Entity to'g'ridan-to'g'ri client'ga berilmaydi:
 
 ```java
-// Entity - malumotlar bazasidagi jadval
+// Entity — DB jadvalidagi barcha ma'lumotlar
 @Entity
 public class User {
-    @Id
     private Long id;
     private String name;
     private String email;
-    private String password;  // BUNI CLIENTGA YUBORIB BOLMAYDI!
-    private boolean isAdmin;  // BU HAM XAVFLI!
+    private String password;       // CLIENT'GA YUBORMANG!
+    private String resetToken;     // XAVFLI!
+    private boolean isAdmin;       // YASHIRIN!
+    private LocalDateTime createdAt;
 }
 ```
 
-DTO bilan:
-
 ```java
-// DTO - clientga yuboriladigan malumot
+// Response DTO — client'ga yuboriladigan ma'lumotlar
 public class UserResponse {
     private Long id;
     private String name;
     private String email;
-    
-    // getter va setter lar
+    // password yo'q, resetToken yo'q, isAdmin yo'q
 }
-```
 
-Va so'rov uchun:
-
-```java
-// CreateUserRequest - clientdan keladigan malumot
+// Request DTO — client'dan keladigan ma'lumotlar
 public class CreateUserRequest {
     private String name;
     private String email;
-    private String password;
-    
-    // getter va setter lar
+    private String password;  // Bu esa kerak — user parol yuboradi
+}
+
+public class UpdateUserRequest {
+    private String name;      // id yo'q — URL'dan keladi
+    private String email;     // password yo'q — alohida endpoint
 }
 ```
 
-Controllerda:
+## DTO bilan ishlash
 
 ```java
 @PostMapping("/users")
-public ResponseEntity<UserResponse> createUser(@RequestBody CreateUserRequest request) {
-    // 1. Request ni entity ga aylantirish
+public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
+    // 1. Request DTO → Entity
     User user = new User();
     user.setName(request.getName());
     user.setEmail(request.getEmail());
-    user.setPassword(request.getPassword());  // parolni shifrlash kerak!
-    
+    user.setPassword(passwordEncoder.encode(request.getPassword()));
+
     // 2. Saqlash
-    User saved = userService.save(user);
-    
-    // 3. Entity ni DTO ga aylantirish
+    User saved = userRepository.save(user);
+
+    // 3. Entity → Response DTO
     UserResponse response = new UserResponse();
     response.setId(saved.getId());
     response.setName(saved.getName());
     response.setEmail(saved.getEmail());
-    
-    // 4. DTO ni qaytarish (parol va admin malumotlari yuborilmaydi)
+
     return ResponseEntity.status(201).body(response);
 }
 ```
 
-## Mapping - Entity va DTO ni aylantirish
+## Mapper — Entity va DTO o'rtasida
 
-### 1-usul: ModelMapper
+Qo'lda mapping — takroriy kod. Mapper kutubxonalar bu ishni avtomatlashtiradi.
 
-```xml
+**MapStruct** — compile time'da mapper generatsiya qiladi, eng tez:
+
+```java
+// pom.xml
 <dependency>
-    <groupId>org.modelmapper</groupId>
-    <artifactId>modelmapper</artifactId>
+    <groupId>org.mapstruct</groupId>
+    <artifactId>mapstruct</artifactId>
+    <version>1.5.5.Final</version>
 </dependency>
-```
 
-```java
-@Service
-public class UserService {
-    private final ModelMapper modelMapper = new ModelMapper();
-    
-    public UserResponse toDto(User user) {
-        return modelMapper.map(user, UserResponse.class);
-    }
-    
-    public User toEntity(CreateUserRequest request) {
-        return modelMapper.map(request, User.class);
-    }
-}
-```
-
-### 2-usul: MapStruct (Tezroq)
-
-```java
+// Mapper interfeysi
 @Mapper(componentModel = "spring")
 public interface UserMapper {
-    UserResponse toDto(User user);
+    UserResponse toResponse(User user);
     User toEntity(CreateUserRequest request);
+    void updateEntity(UpdateUserRequest request, @MappingTarget User user);
 }
-```
 
-## ResponseEntity - To'liq javob
+// Ishlatish
+@Service
+public class UserService {
+    private final UserMapper userMapper;
 
-ResponseEntity sizga javobni to'liq boshqarish imkonini beradi:
-
-```java
-@GetMapping("/users/{id}")
-public ResponseEntity<UserResponse> getUser(@PathVariable Long id) {
-    User user = userService.findById(id).orElse(null);
-    
-    if (user == null) {
-        // 404 - topilmadi
-        return ResponseEntity
-            .status(HttpStatus.NOT_FOUND)
-            .body(null);
+    public UserResponse create(CreateUserRequest request) {
+        User user = userMapper.toEntity(request);
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        return userMapper.toResponse(userRepository.save(user));
     }
-    
-    // 200 - muvaffaqiyatli
-    UserResponse response = userMapper.toDto(user);
-    return ResponseEntity
-        .status(HttpStatus.OK)
-        .header("Custom-Header", "value")
-        .body(response);
 }
 ```
 
-## Jackson - JSON ni sozlash
+## ResponseEntity — to'liq javob
+
+`ResponseEntity` status kodi, headerlar va body'ni birgalikda belgilash imkonini beradi:
 
 ```java
-public class User {
-    private Long id;
-    
-    @JsonIgnore  // Bu field JSON ga kiritilmaydi
-    private String password;
-    
-    @JsonProperty("full_name")  // JSON da "full_name" deb ketadi
-    private String name;
-    
-    @JsonFormat(pattern = "yyyy-MM-dd")
-    private LocalDate birthDate;
+@GetMapping("/{id}")
+public ResponseEntity<UserResponse> getUser(@PathVariable Long id) {
+    UserResponse user = userService.findById(id);
+    return ResponseEntity
+        .ok()                                    // 200 status
+        .header("X-User-Id", id.toString())      // Custom header
+        .body(user);                             // Body
+}
+
+@PostMapping
+public ResponseEntity<UserResponse> createUser(@RequestBody CreateUserRequest req) {
+    UserResponse saved = userService.create(req);
+    return ResponseEntity
+        .status(HttpStatus.CREATED)              // 201 status
+        .location(URI.create("/api/users/" + saved.getId()))  // Location header
+        .body(saved);
 }
 ```
 
-## Xulosa
+## Jackson — JSON ni sozlash
 
-- @RequestBody -> JSON dan Java obektga
-- @ResponseBody -> Java obektdan JSON ga
-- DTO -> Client va Entity orasida himoya qatlami
-- ResponseEntity -> Javobni to'liq boshqarish
-- Jackson -> JSON formatini sozlash
+```java
+public class UserResponse {
+    private Long id;
+
+    @JsonIgnore           // Bu field JSON'ga kirmaydi
+    private String internalCode;
+
+    @JsonProperty("full_name")  // JSON'da "full_name" deb chiqadi
+    private String name;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")  // Sana formati
+    private LocalDateTime createdAt;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)  // null bo'lsa chiqarmaydi
+    private String optionalField;
+}
+```
+
+Global Jackson sozlamalari `application.properties`'da:
+
+```properties
+# null qiymatlarni JSON'ga kiritmaslik
+spring.jackson.default-property-inclusion=non_null
+
+# Sanani timestamp sifatida emas, string sifatida
+spring.jackson.serialization.write-dates-as-timestamps=false
+
+# CamelCase → snake_case (ixtiyoriy)
+spring.jackson.property-naming-strategy=SNAKE_CASE
+```
+
+## Standart javob formati
+
+Barcha javoblar bir xil formatda bo'lishi yaxshiroq:
+
+```java
+// Generic wrapper
+public class ApiResponse<T> {
+    private boolean success;
+    private String message;
+    private T data;
+    private LocalDateTime timestamp = LocalDateTime.now();
+
+    public static <T> ApiResponse<T> success(T data) {
+        ApiResponse<T> response = new ApiResponse<>();
+        response.success = true;
+        response.data = data;
+        return response;
+    }
+
+    public static <T> ApiResponse<T> error(String message) {
+        ApiResponse<T> response = new ApiResponse<>();
+        response.success = false;
+        response.message = message;
+        return response;
+    }
+}
+
+// Controller'da
+@GetMapping("/{id}")
+public ResponseEntity<ApiResponse<UserResponse>> getUser(@PathVariable Long id) {
+    return ResponseEntity.ok(ApiResponse.success(userService.findById(id)));
+}
+```

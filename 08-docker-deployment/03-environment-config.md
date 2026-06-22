@@ -1,51 +1,52 @@
-# Environment Config - Environment variables va Secrets
+# Environment Config — Sozlamalar va Maxfiy ma'lumotlar
 
-## Environment Variables nima?
+Parol, API kalit, ma'lumotlar bazasi URL'i kabi maxfiy ma'lumotlarni kodga yozish — eng xavfli xato. GitHub'da ko'rinadi, o'zgartirganda kodni qayta build qilish kerak.
 
-Environment variables = operatsion tizimdagi ozgaruvchilar. Ilova ishlashi uchun kerakli malumotlarni saqlaydi.
-
-Muammo: parol, API kalit kabi maxfiy malumotlarni kodga yozib bolmaydi.
-
-Yomon usul:
+## Muammo: hardcode
 
 ```java
-// Kod ichida parol - XAVFLI!
-spring.datasource.password=12345
+// YOMON — hech qachon bunday qilmang
+@Service
+public class EmailService {
+    private final String apiKey = "sk-1234567890abcdef";  // GitHub'da ko'rinadi!
+    private final String dbPassword = "SuperSecret123";    // Xavfli!
+}
 ```
 
-Yaxshi usul:
+## Yechim: Environment variables
 
 ```properties
-# application.properties
+# application.properties — faqat havola, qiymat emas
+spring.datasource.url=${DB_URL}
+spring.datasource.username=${DB_USER}
 spring.datasource.password=${DB_PASSWORD}
+
+jwt.secret=${JWT_SECRET}
+email.api-key=${EMAIL_API_KEY}
+
+# Default qiymat bilan
+server.port=${PORT:8080}
+spring.profiles.active=${PROFILE:dev}
 ```
 
 ```bash
-# Terminalda parolni o'rnatish
-export DB_PASSWORD=12345
+# Production serverda — tashqaridan berish
+export DB_URL=jdbc:postgresql://prod-db:5432/myapp
+export DB_USER=prod_user
+export DB_PASSWORD=VerySecretProdPassword
+export JWT_SECRET=404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+
 java -jar app.jar
 ```
 
-## Spring Boot da Environment Variables
-
-```properties
-# application.properties da ishlatish
-server.port=${PORT:8080}                    # Default: 8080
-spring.datasource.url=${DB_URL}             # Majburiy
-spring.datasource.username=${DB_USER:postgres} # Default: postgres
-spring.datasource.password=${DB_PASSWORD}   # Majburiy
-spring.profiles.active=${PROFILE:dev}       # Default: dev
-```
-
-## .env fayli
-
-Development da ishlatish uchun:
+## .env fayli — development uchun
 
 ```bash
-# .env fayli (.gitignore ga qoshilgan)
-DB_URL=jdbc:postgresql://localhost:5432/mydb
+# .env fayli — faqat local development
+DB_URL=jdbc:postgresql://localhost:5432/dev_db
 DB_USER=postgres
-DB_PASSWORD=12345
+DB_PASSWORD=postgres
+JWT_SECRET=dev_secret_key_not_for_production
 PROFILE=dev
 ```
 
@@ -54,107 +55,173 @@ PROFILE=dev
 spring.config.import=optional:file:.env[.properties]
 ```
 
-**.env fayli .gitignore da bolishi kerak!**
+**Muhim:** `.env` faylini `.gitignore`'ga qo'shing:
 
-## Docker da Environment Variables
+```gitignore
+# .gitignore
+.env
+.env.local
+.env.production
+```
+
+Faqat `.env.example` fayli Git'da — faqat kalit nomlar, qiymatlar emas:
+
+```bash
+# .env.example — bu Git'da
+DB_URL=
+DB_USER=
+DB_PASSWORD=
+JWT_SECRET=
+```
+
+## Docker Compose bilan
 
 ```yaml
 # docker-compose.yml
 services:
   app:
-    build: .
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/myapp
-      DB_USER: myapp_user
-      DB_PASSWORD: myapp_pass
-      PROFILE: prod
-    
-    # Yoki .env faylidan olish
+      # To'g'ridan-to'g'ri
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/myapp_db
+      # .env fayldan
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+
+    # Yoki butun .env faylni yuklash
     env_file:
       - .env
 ```
 
 ```bash
-# Docker run da berish
-docker run -e DB_URL=jdbc:postgresql://localhost:5432/mydb \
-           -e DB_USER=postgres \
-           -e DB_PASSWORD=secret \
-           -e PROFILE=prod \
-           my-app
+# Docker run bilan
+docker run \
+  --env-file .env \
+  -p 8080:8080 \
+  my-spring-app:1.0.0
 ```
 
-## Kubernetes da Secrets
+## Spring profiles bilan birgalikda
 
-```yaml
-# k8s-secret.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: db-credentials
-type: Opaque
-data:
-  DB_USER: bXlhcHBfdXNlcg==          # base64: myapp_user
-  DB_PASSWORD: bXlhcHBfcGFzcw==      # base64: myapp_pass
 ```
-
-```yaml
-# k8s-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-spec:
-  template:
-    spec:
-      containers:
-      - name: app
-        image: my-app:1.0
-        env:
-        - name: DB_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: DB_USER
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: DB_PASSWORD
+application.properties          <- umumiy
+application-dev.properties      <- development sozlamalari
+application-prod.properties     <- production sozlamalari (maxfiy qiymatlar ENV'dan)
 ```
-
-## Security best practices
 
 ```properties
-# application.properties da DEFAULT qiymatlar bolishi mumkin
-# LEKIN haqiqiy parollar kiritilmasligi kerak!
-
-# Yaxshi:
-spring.datasource.password=${DB_PASSWORD}  # Environment dan ol
-
-# Yomon:
-spring.datasource.password=12345  # Kod ichida parol
+# application-prod.properties
+spring.datasource.url=${DB_URL}
+spring.datasource.username=${DB_USER}
+spring.datasource.password=${DB_PASSWORD}
+spring.jpa.show-sql=false
+logging.level.root=WARN
+server.port=${PORT:8080}
 ```
 
-## @Value bilan environment variable
+```bash
+# Production'da
+SPRING_PROFILES_ACTIVE=prod
+DB_URL=jdbc:postgresql://...
+DB_PASSWORD=...
+java -jar app.jar
+```
+
+## @Value bilan olish
 
 ```java
 @Component
 public class AppConfig {
-    
-    @Value("${DB_URL}")
-    private String dbUrl;
-    
-    @Value("${DB_USER:postgres}")  // Default: postgres
-    private String dbUser;
-    
-    @Value("${PROFILE:dev}")
-    private String profile;
+
+    @Value("${jwt.secret}")
+    private String jwtSecret;
+
+    @Value("${server.port:8080}")  // Default qiymat
+    private int port;
+
+    @Value("${feature.payments.enabled:false}")
+    private boolean paymentsEnabled;
 }
 ```
 
-## Xulosa
+## @ConfigurationProperties — strukturali
 
-- Environment variables -> maxfiy malumotlarni kodga yozmaslik
-- ${VAR_NAME:default} -> environment variable ni olish
-- .env fayli -> development uchun (gitignore da)
-- Docker -> environment orqali berish
-- Kubernetes -> Secret orqali berish
-- Hech qachon parolni kodga yozmang
+```java
+@Component
+@ConfigurationProperties(prefix = "app")
+public class AppProperties {
+
+    private Database database = new Database();
+    private Jwt jwt = new Jwt();
+
+    public static class Database {
+        private String url;
+        private String username;
+        private String password;
+        // getter/setter
+    }
+
+    public static class Jwt {
+        private String secret;
+        private long expirationMs = 86_400_000L;
+        // getter/setter
+    }
+}
+```
+
+```properties
+app.database.url=${DB_URL}
+app.database.username=${DB_USER}
+app.database.password=${DB_PASSWORD}
+app.jwt.secret=${JWT_SECRET}
+app.jwt.expiration-ms=3600000
+```
+
+## Kubernetes Secrets
+
+```yaml
+# k8s-secret.yaml — Base64 encoded qiymatlar
+apiVersion: v1
+kind: Secret
+metadata:
+  name: myapp-secrets
+type: Opaque
+data:
+  DB_PASSWORD: bXlQcm9kUGFzc3dvcmQ=   # base64("myProdPassword")
+  JWT_SECRET: c2VjcmV0S2V5MTIz        # base64("secretKey123")
+```
+
+```yaml
+# k8s-deployment.yaml
+spec:
+  containers:
+  - name: app
+    image: my-spring-app:1.0.0
+    env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: myapp-secrets
+          key: DB_PASSWORD
+    - name: JWT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: myapp-secrets
+          key: JWT_SECRET
+```
+
+## Xavfsizlik qoidalari
+
+Parollarni tekshirish uchun: `git log --all --full-history -- .env` — agar qachondir commit qilingan bo'lsa, history'da qoladi. `git filter-branch` yoki BFG Repo-Cleaner bilan tozalash kerak.
+
+Kuchli secret generatsiya qilish:
+
+```bash
+# JWT secret uchun (256-bit, Base64)
+openssl rand -base64 32
+
+# DB parol uchun
+openssl rand -base64 16
+```
+
+Production'da environment variables — minimal talab. Katta loyihalarda HashiCorp Vault, AWS Secrets Manager, Azure Key Vault kabi maxsus tizimlardan foydalaniladi.

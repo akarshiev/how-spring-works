@@ -1,10 +1,13 @@
-# Database - Malumotlar bazasi bilan ishlash
+# Database
 
-Spring ilovalarida malumotlar bazasini tushunish juda muhim.
+PostgreSQL va ma'lumotlar bazasi bilan professional ishlash.
 
 ## Mavzular
 
-1. **01-postgresql-basics.md** -> PostgreSQL asosiy tushunchalar
-2. **02-sql-queries.md** -> JOIN, subquery, index
-3. **03-flyway-migrations.md** -> Migration nima, Flyway qanday ishlaydi
-4. **04-connection-pool.md** -> HikariCP, connection pool
+`01-postgresql-basics.md` — Jadval tuzilishi, ma'lumot turlari, CRUD, Docker bilan PostgreSQL.
+
+`02-sql-queries.md` — INNER/LEFT JOIN, Subquery, CTE, Index, EXPLAIN ANALYZE, PostgreSQL imkoniyatlari.
+
+`03-flyway-migrations.md` — Migration nima, `flyway_schema_history`, fayl nomlash, rollback.
+
+`04-connection-pool.md` — HikariCP mexanizmi, optimal sozlamalar, monitoring, ko'p uchraydigan xatolar.

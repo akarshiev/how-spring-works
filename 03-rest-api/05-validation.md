@@ -1,35 +1,8 @@
-# Validation - Malumotlarni tekshirish
+# Validation — Ma'lumotlarni tekshirish
 
-## Nega validation kerak?
+Foydalanuvchi yuborgan ma'lumotlarni tekshirmasdan ishlatish — eng ko'p uchraydigan xavfsizlik xatosi. Bean Validation (Jakarta Validation) bu ishni annotatsiyalar orqali hal qiladi.
 
-Foydalanuvchi hech qachon to'g'ri malumot yubormaydi. Shuning uchun malumotlarni tekshirish kerak.
-
-Yomon usul - qo'lda tekshirish:
-
-```java
-@PostMapping("/users")
-public ResponseEntity<?> createUser(@RequestBody User user) {
-    // Qo'lda tekshirish
-    if (user.getName() == null || user.getName().isBlank()) {
-        return ResponseEntity.badRequest().body("Name bosh bolmasligi kerak");
-    }
-    if (user.getEmail() == null || !user.getEmail().contains("@")) {
-        return ResponseEntity.badRequest().body("Email notogri");
-    }
-    if (user.getAge() != null && user.getAge() < 0) {
-        return ResponseEntity.badRequest().body("Yosh manfiy bolmasligi kerak");
-    }
-    // ... va hokazo
-}
-```
-
-Har bir metodda qo'lda tekshirish juda kop kod takrorlashga olib keladi.
-
-## Bean Validation (@Valid)
-
-Java da standart validation annotatsiyalari bor. Faqat @Valid qoshish kifoya.
-
-### 1-qadam: Dependency qoshish
+## Dependency
 
 ```xml
 <dependency>
@@ -38,188 +11,186 @@ Java da standart validation annotatsiyalari bor. Faqat @Valid qoshish kifoya.
 </dependency>
 ```
 
-### 2-qadam: DTO ga annotatsiyalar qoshish
+## DTO'ga annotatsiya qo'shish
 
 ```java
 public class CreateUserRequest {
-    
-    @NotBlank(message = "Name bosh bolmasligi kerak")
-    @Size(min = 2, max = 50, message = "Name 2-50 belgi orasida bolishi kerak")
+
+    @NotBlank(message = "Ism kiritilishi shart")
+    @Size(min = 2, max = 50, message = "Ism 2 dan 50 gacha belgidan iborat bo'lishi kerak")
     private String name;
-    
-    @NotBlank(message = "Email bosh bolmasligi kerak")
-    @Email(message = "Email notogri formatda")
+
+    @NotBlank(message = "Email kiritilishi shart")
+    @Email(message = "Email noto'g'ri formatda")
     private String email;
-    
+
     @NotNull(message = "Yosh kiritilishi shart")
-    @Min(value = 0, message = "Yosh 0 dan kichik bolmasligi kerak")
-    @Max(value = 150, message = "Yosh 150 dan katta bolmasligi kerak")
+    @Min(value = 18, message = "Yosh 18 dan katta bo'lishi kerak")
+    @Max(value = 120, message = "Yosh 120 dan kichik bo'lishi kerak")
     private Integer age;
-    
-    @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Telefon raqam notogri")
-    private String phone;
-    
-    // getter va setter lar
+
+    @Pattern(regexp = "^\\+998[0-9]{9}$", message = "Telefon noto'g'ri formatda (+998901234567)")
+    private String phone;  // Ixtiyoriy — null bo'lsa @Pattern ishlamaydi
+
+    @NotBlank
+    @Size(min = 8, message = "Parol kamida 8 ta belgidan iborat bo'lishi kerak")
+    private String password;
 }
 ```
 
-### 3-qadam: Controllerda @Valid qoshish
+## Controller'da @Valid
 
 ```java
 @PostMapping("/users")
 public ResponseEntity<UserResponse> createUser(
-    @Valid @RequestBody CreateUserRequest request  // @Valid -> tekshir!
+    @Valid @RequestBody CreateUserRequest request
+    // @Valid bo'lmasa — annotatsiyalar tekshirilmaydi!
 ) {
-    User saved = userService.save(request);
-    return ResponseEntity.status(201).body(userMapper.toDto(saved));
+    return ResponseEntity.status(201).body(userService.create(request));
 }
 ```
 
-Agar malumotlar xato bolsa -> Spring avtomatik ravishda 400 qaytaradi.
+Validation xatosi chiqsa — `MethodArgumentNotValidException` tashlanadi. `@ControllerAdvice`'da ushlang (oldingi bo'lim).
 
-## Eng ko'p ishlatiladigan validation annotatsiyalari
+## Asosiy annotatsiyalar
 
-| Annotatsiya | Nima tekshiradi? |
-|-------------|-----------------|
-| @NotBlank | String bosh emas va probel emas |
-| @NotEmpty | Collection/Map bosh emas |
-| @NotNull | null emas |
-| @Size(min, max) | Uzunlik |
-| @Min(value) | Minimum qiymat |
-| @Max(value) | Maximum qiymat |
-| @Email | Email format |
-| @Pattern(regexp) | Regex pattern |
-| @Positive | Musbat son |
-| @PositiveOrZero | Musbat yoki 0 |
-| @Past | Otgan sana |
-| @Future | Kelajak sana |
+| Annotatsiya | Nima tekshiradi? | Null'ni? |
+|-------------|-----------------|----------|
+| `@NotNull` | Null emas | Xato |
+| `@NotEmpty` | Null emas va bo'sh emas | Xato |
+| `@NotBlank` | Null emas, bo'sh emas, probel emas | Xato |
+| `@Size(min, max)` | Uzunlik (String, Collection, Array) | O'tkazadi |
+| `@Min(value)` | Minimal son | O'tkazadi |
+| `@Max(value)` | Maksimal son | O'tkazadi |
+| `@Email` | Email formati | O'tkazadi |
+| `@Pattern(regexp)` | Regex pattern | O'tkazadi |
+| `@Positive` | Musbat son (> 0) | O'tkazadi |
+| `@PositiveOrZero` | Musbat yoki nol | O'tkazadi |
+| `@Past` | O'tgan sana | O'tkazadi |
+| `@Future` | Kelajak sana | O'tkazadi |
 
-## @Validated - Guruhli tekshirish
+"O'tkazadi" — null qiymat uchun xato chiqarmaydi. Agar null bo'lmasligi kerak bo'lsa, `@NotNull` bilan birga ishlating.
 
-Har xil holatda har xil tekshirish:
+## Custom Validator
 
-```java
-// Guruhlar
-public class ValidationGroups {
-    public interface Create {}    // Yaratish uchun
-    public interface Update {}    // Yangilash uchun
-}
-
-public class UserRequest {
-    @Null(groups = Create.class)      // Yaratishda id null bolishi kerak
-    @NotNull(groups = Update.class)   // Yangilashda id kerak
-    private Long id;
-    
-    @NotBlank(groups = Create.class)  // Yaratishda name majburiy
-    @Size(min = 2, max = 50, groups = {Create.class, Update.class})
-    private String name;
-    
-    @Email(groups = Create.class)     // Yaratishda email majburiy
-    private String email;
-}
-```
-
-Ishlatish:
+Standart annotatsiyalar yetmasa, o'zingizniki yarating:
 
 ```java
-@PostMapping("/users")
-public UserResponse createUser(
-    @Validated(ValidationGroups.Create.class) @RequestBody UserRequest request
-) { ... }
-
-@PutMapping("/users/{id}")
-public UserResponse updateUser(
-    @Validated(ValidationGroups.Update.class) @RequestBody UserRequest request
-) { ... }
-```
-
-## Custom validation
-
-Agar standart annotatsiyalar yetmasa, ozingiz yaratasiz:
-
-### 1-qadam: Annotatsiya yaratish
-
-```java
+// 1. Annotatsiya
 @Target({ElementType.FIELD})
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = UniqueEmailValidator.class)
 public @interface UniqueEmail {
-    String message() default "Bu email allaqachon mavjud";
+    String message() default "Bu email allaqachon ro'yxatdan o'tgan";
     Class<?>[] groups() default {};
     Class<? extends Payload>[] payload() default {};
 }
-```
 
-### 2-qadam: Validator klassini yaratish
-
-```java
+// 2. Validator klassi
+@Component
 public class UniqueEmailValidator implements ConstraintValidator<UniqueEmail, String> {
-    
+
     @Autowired
     private UserRepository userRepository;
-    
+
     @Override
     public boolean isValid(String email, ConstraintValidatorContext context) {
-        if (email == null) return true;  // @NotNull boshqa tekshiradi
+        if (email == null) return true;  // null tekshirishni @NotNull qilsin
         return !userRepository.existsByEmail(email);
     }
 }
-```
 
-### 3-qadam: Ishlatish
-
-```java
+// 3. Ishlatish
 public class CreateUserRequest {
     @NotBlank
     @Email
-    @UniqueEmail  // OZINGIZNING VALIDATORINGIZ!
+    @UniqueEmail  // O'zingizning validatoringiz
     private String email;
 }
 ```
 
-## Xatolik javobini chiroyli qilish
+## Guruhli validation
+
+Yaratish va yangilashda turli qoidalar:
 
 ```java
-@ControllerAdvice
-public class ValidationExceptionHandler {
-    
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        
-        ex.getBindingResult().getFieldErrors().forEach(error -> {
-            errors.put(error.getField(), error.getDefaultMessage());
-        });
-        
-        ErrorResponse response = new ErrorResponse(
-            HttpStatus.BAD_REQUEST.value(),
-            "Validation xatosi",
-            errors
-        );
-        
-        return ResponseEntity.badRequest().body(response);
-    }
+// Guruhlar
+public interface OnCreate {}
+public interface OnUpdate {}
+
+public class UserRequest {
+
+    @Null(groups = OnCreate.class)      // Yaratishda id bo'lmasligi kerak
+    @NotNull(groups = OnUpdate.class)   // Yangilashda id kerak
+    private Long id;
+
+    @NotBlank(groups = {OnCreate.class, OnUpdate.class})
+    @Size(min = 2, max = 50, groups = {OnCreate.class, OnUpdate.class})
+    private String name;
+
+    @NotBlank(groups = OnCreate.class)  // Yaratishda email majburiy
+    @Email(groups = OnCreate.class)
+    private String email;               // Yangilashda email o'zgartirilmaydi
+}
+
+// Controller'da
+@PostMapping("/users")
+public UserResponse create(
+    @Validated(OnCreate.class) @RequestBody UserRequest request
+) { ... }
+
+@PutMapping("/users/{id}")
+public UserResponse update(
+    @PathVariable Long id,
+    @Validated(OnUpdate.class) @RequestBody UserRequest request
+) { ... }
+```
+
+## @Valid ichida ob'ekt
+
+Ichki ob'ektni ham tekshirish uchun:
+
+```java
+public class OrderRequest {
+
+    @NotNull
+    @Valid  // AddressRequest ham tekshirilsin
+    private AddressRequest deliveryAddress;
+}
+
+public class AddressRequest {
+    @NotBlank
+    private String city;
+
+    @NotBlank
+    private String street;
 }
 ```
 
-Natija:
+## Programmatic validation
 
-```json
-{
-    "status": 400,
-    "message": "Validation xatosi",
-    "timestamp": "2026-05-20T14:30:00",
-    "errors": {
-        "email": "Email notogri formatda",
-        "age": "Yosh 0 dan kichik bolmasligi kerak"
+Controller'dan tashqarida tekshirish kerak bo'lsa:
+
+```java
+@Service
+public class UserService {
+
+    @Autowired
+    private Validator validator;
+
+    public void validateAndCreate(CreateUserRequest request) {
+        Set<ConstraintViolation<CreateUserRequest>> violations = validator.validate(request);
+
+        if (!violations.isEmpty()) {
+            Map<String, String> errors = violations.stream()
+                .collect(Collectors.toMap(
+                    v -> v.getPropertyPath().toString(),
+                    ConstraintViolation::getMessage
+                ));
+            throw new ValidationException("Validatsiya xatosi", errors);
+        }
+
+        userRepository.save(mapToEntity(request));
     }
 }
 ```
-
-## Xulosa
-
-- @Valid -> bir soz bilan validatsiyani yoqish
-- @NotBlank, @Email, @Size -> eng kop ishlatiladigan tekshirishlar
-- Guruhli tekshirish -> turli holatda turli tekshirish
-- Custom validation -> oz tekshirishingizni yozish
-- @ControllerAdvice + @ExceptionHandler -> chiroyli xatolik javobi

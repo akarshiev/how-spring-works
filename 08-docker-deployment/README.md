@@ -1,9 +1,11 @@
 # Docker va Deployment
 
-Ilovangizni Docker orqali istalgan serverda ishga tushirish.
+Ilovangizni istalgan muhitda bir xil ishga tushirish.
 
 ## Mavzular
 
-1. **01-dockerfile.md** -> Spring Boot app uchun Dockerfile
-2. **02-docker-compose.md** -> app + postgres + redis compose
-3. **03-environment-config.md** -> env variables, secrets
+`01-dockerfile.md` — Multi-stage Dockerfile, layer caching, JVM container sozlamalari.
+
+`02-docker-compose.md` — app + postgres + redis, `healthcheck`, `depends_on`, servislar orasidagi muloqot.
+
+`03-environment-config.md` — Environment variables, `.env` fayl, maxfiy ma'lumotlar boshqaruvi.

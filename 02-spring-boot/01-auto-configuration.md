@@ -1,37 +1,9 @@
 # @SpringBootApplication ichida nima bor?
 
-## @SpringBootApplication qanday ishlaydi?
-
-Bu annotation - bu bitta emas, 3 ta annotationning birikmasi:
-
-```java
-@SpringBootApplication = @Configuration + @EnableAutoConfiguration + @ComponentScan
-```
-
-Keling, har birini korib chiqamiz.
-
-## 1. @Configuration
-
-Bu Springga "bu klassda beanlar bor" deb aytadi.
-
-```java
-@Configuration  // Spring: "Bu yerda konfiguratsiya bor"
-public class AppConfig {
-    
-    @Bean  // Spring: "UserService bean yaratish kerak"
-    public UserService userService() {
-        return new UserService();
-    }
-}
-```
-
-## 2. @ComponentScan
-
-Springga qayerdan klasslarni qidirish kerakligini aytadi.
+Spring Boot loyihasida hamma narsa bitta annotation bilan boshlanadi:
 
 ```java
 @SpringBootApplication
-// @ComponentScan("com.example") - bu avtomatik qoshiladi
 public class Application {
     public static void main(String[] args) {
         SpringApplication.run(Application.class, args);
@@ -39,78 +11,70 @@ public class Application {
 }
 ```
 
-Spring qidirishni sizning main klassingiz joylashgan papkadan boshlaydi:
+Bu annotation aslida uchta annotation'ning birikmasidir:
 
-```
-com/example/
-  +-- Application.java (mana shu yerda)
-  +-- controller/
-  +-- service/
-  +-- repository/
+```java
+@SpringBootApplication
+= @Configuration + @EnableAutoConfiguration + @ComponentScan
 ```
 
-@ComponentScan shu papka va uning ichidagi hamma papkalardan @Component, @Service, @Repository, @Controller larni topadi.
+## @Configuration
 
-## 3. @EnableAutoConfiguration
-
-Spring Bootning eng kuchli qismi. Spring qoshib qoyilgan maven dependency larni koradi va shunga qarab sozlamalarni avtomatik qiladi.
-
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
-</dependency>
-```
-
-Spring:
-
-```
-"spring-boot-starter-web bor -> Web ilova -> Tomcat ni ishga tushir -> DispatcherServlet ni sozla"
-```
-
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-jpa</artifactId>
-</dependency>
-```
-
-Spring:
-
-```
-"JPA bor -> DataSource ni sozla -> EntityManagerFactory ni yarat -> Hibernate ni yukla"
-```
-
-## @EnableAutoConfiguration qanday ishlaydi?
-
-Spring Bootning ichida `spring.factories` degan fayl bor. Bu faylda qanday klasslarni avtomatik ishga tushirish kerakligi yozilgan.
-
-```
-# META-INF/spring.factories faylining ichida:
-org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-  org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration,\
-  org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,\
-  ... 100 dan ortiq auto-configuration klasslari
-```
-
-Spring Boot shu klasslarni tekshiradi. Agar:
-- Kerakli dependency bor bolsa -> klassni ishga tushiradi
-- Kerakli dependency yoq bolsa -> klassni otkazib yuboradi
-
-## Avtomatik konfiguratsiya qanday ishlaydi?
+Bu klassda Spring bean'lari aniqlanadi deb bildiradi:
 
 ```java
 @Configuration
-@ConditionalOnClass(DataSource.class)  // Faqat DataSource classi bolsa
-@ConditionalOnMissingBean(DataSource.class)  // Va DataSource bean yaratilmagan bolsa
-@EnableConfigurationProperties(DataSourceProperties.class)  // application.properties dan ol
-public class DataSourceAutoConfiguration {
-    
+public class AppConfig {
+
     @Bean
-    @ConditionalOnMissingBean  // Agar foydalanuvchi oz DataSource bermagan bolsa
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+```
+
+## @ComponentScan
+
+Spring qaysi papkadan komponentlarni qidirishi kerakligini belgilaydi. Default — `main` klassi joylashgan papka va uning ichidagi barcha papkalar:
+
+```
+com.example/
+  +-- Application.java    <- @ComponentScan shu yerdan boshlanadi
+  +-- controller/
+  |     +-- UserController.java      <- topiladi
+  +-- service/
+  |     +-- UserService.java         <- topiladi
+  +-- repository/
+        +-- UserRepository.java      <- topiladi
+```
+
+`com.example` dan tashqaridagi hech narsa avtomatik topilmaydi.
+
+## @EnableAutoConfiguration
+
+Spring Boot'ning eng kuchli qismi. Classpath'da qaysi kutubxona borligiga qarab, sozlamalarni avtomatik qiladi.
+
+![Spring Boot Auto-Configuration](https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/images/spring-boot-auto-configuration.png)
+
+`spring-boot-starter-web` qo'shilsa — Spring Tomcat, DispatcherServlet, Jackson'ni avtomatik sozlaydi.
+
+`spring-boot-starter-data-jpa` qo'shilsa — DataSource, EntityManagerFactory, Hibernate avtomatik sozlanadi.
+
+## Avtomatik konfiguratsiya mexanizmi
+
+Spring Boot `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` faylida yuzlab konfiguratsiya klassi ro'yxatini saqlaydi. Har biri muayyan shart bajarilgandagina ishga tushadi:
+
+```java
+// Spring Boot ichidagi DataSourceAutoConfiguration taxminan shunday:
+@AutoConfiguration
+@ConditionalOnClass(DataSource.class)         // DataSource classi bormi?
+@ConditionalOnMissingBean(DataSource.class)   // Foydalanuvchi o'zi bermagan bo'lsa
+@EnableConfigurationProperties(DataSourceProperties.class)
+public class DataSourceAutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
     public DataSource dataSource(DataSourceProperties properties) {
-        // application.properties dan url, username, password ni olib
-        // DataSource yaratadi
         return DataSourceBuilder.create()
             .url(properties.getUrl())
             .username(properties.getUsername())
@@ -124,19 +88,33 @@ public class DataSourceAutoConfiguration {
 
 | Annotation | Nima tekshiradi? |
 |-----------|-----------------|
-| @ConditionalOnClass | Klass classpathda bormi? |
-| @ConditionalOnMissingBean | Bean hali yaratilmaganmi? |
-| @ConditionalOnProperty | application.properties da property bormi? |
-| @ConditionalOnExpression | SpEL ifoda bajariladimi? |
+| `@ConditionalOnClass` | Klass classpath'da bormi? |
+| `@ConditionalOnMissingBean` | Bean hali yaratilmaganmi? |
+| `@ConditionalOnProperty` | application.properties'da property bormi? |
+| `@ConditionalOnWebApplication` | Bu web ilovami? |
+| `@ConditionalOnExpression` | SpEL ifoda to'g'rimi? |
 
-## Xulosa
+## Avtomatik konfiguratsiyani o'chirish
 
-@SpringBootApplication = 3 ta annotationning birikmasi:
+Ba'zan Spring'ning avtomatik konfiguratsiyasi siz istaganidan farq qilishi mumkin:
 
+```java
+@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})
+public class Application {
+    // DataSource ni Spring avtomatik sozlamasin — o'zim qilaman
+}
 ```
-@SpringBootApplication
-    |
-    +-- @Configuration       -> "Bu yerda bean config bor"
-    +-- @ComponentScan        -> "Klasslarni mana bu papkadan qidir"
-    +-- @EnableAutoConfiguration -> "Dependencylarga qarab sozlamalarni avtomatik qil"
+
+## application.properties orqali ta'sir o'tkazish
+
+Avtomatik konfiguratsiya sozlamalarini properties orqali o'zgartirish mumkin:
+
+```properties
+# Tomcat portini o'zgartirish (WebMvcAutoConfiguration ta'sirida)
+server.port=9090
+
+# DataSource ni o'zgartirish (DataSourceAutoConfiguration ta'sirida)
+spring.datasource.url=jdbc:postgresql://localhost:5432/mydb
 ```
+
+Spring Boot'ning hujjatlarida har bir auto-configuration qaysi properties'ni qabul qilishini topish mumkin.

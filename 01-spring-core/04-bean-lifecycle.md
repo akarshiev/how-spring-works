@@ -1,193 +1,139 @@
-# Bean Lifecycle - Bean qanday tugiladi va oladi?
+# Bean Lifecycle — Bean qanday tug'iladi va o'ladi?
 
-## Bean nima?
+Bean — Spring IoC Container boshqaradigan obyekt. Spring uni yaratadi, sozlaydi, va kerak bo'lmaganda yo'q qiladi.
 
-Bean - bu Spring boshqaradigan obekt. Spring yaratgan har qanday obekt "Bean" deb ataladi.
-
-Oddiy qilib aytganda: **Bean = Springning farzandi**. Spring uni yaratadi, parvarish qiladi va kerak bolmasa, yogotadi.
-
-## Beanning hayot davri
-
-Bean 7 bosqichdan otadi. Keling, har birini korib chiqamiz.
+## Hayot davri bosqichlari
 
 ```
-1. Bean ta'riflanadi (Definition)
-          |
-2. Bean yaratiladi (Instantiation)
-          |
-3. Bogliqliklar yuklanadi (Populate Properties)
-          |
-4. Aware interfeyslari chaqiriladi (Aware)
-          |
-5. Before init (BeanPostProcessor before)
-          |
-6. Init metodi (Initialization)
-          |
-7. After init (BeanPostProcessor after)
-          |
-         ... Bean ishlatiladi ...
-          |
-8. Bean yogotiladi (Destruction)
+Bean ta'riflanadi (@Component, @Bean)
+         |
+         v
+Bean yaratiladi (konstruktor chaqiriladi)
+         |
+         v
+Bog'liqliklar yuklanadi (DI)
+         |
+         v
+Aware interfeyslari chaqiriladi
+         |
+         v
+@PostConstruct metodi ishlaydi
+         |
+         v
+Bean ishlatiladi
+         |
+         v
+@PreDestroy metodi ishlaydi
+         |
+         v
+Bean yo'q qilinadi
 ```
 
-## 1-bosqich: Bean ta'riflanadi
+## @PostConstruct va @PreDestroy
 
-Spring qaysi beanlarni yaratish kerakligini aniqlaydi.
-
-```java
-@Component  -> @Service  -> @Repository  -> @Controller
-     |            |             |               |
-     v            v             v               v
-     Spring: "Bu 4 ta klassni bean qilib yarataman"
-```
-
-Yoki XML orqali:
-
-```xml
-<bean id="userService" class="com.example.UserService"/>
-```
-
-Yoki @Bean orqali:
-
-```java
-@Configuration
-public class Config {
-    @Bean
-    public UserService userService() {
-        return new UserService();
-    }
-}
-```
-
-## 2-bosqich: Bean yaratiladi (Instantiation)
-
-Spring Java reflection orqali obektni yaratadi.
-
-```java
-// Spring taxminan shunday ishlaydi
-Class<?> clazz = Class.forName("com.example.UserService");
-Object bean = clazz.getDeclaredConstructor().newInstance();
-```
-
-## 3-bosqich: Bogliqliklar yuklanadi
-
-Spring @Autowired yoki konstruktor orqali bogliqliklarni yuklaydi.
-
-```java
-public UserService(UserRepository repository) {
-    // Spring: "Mana UserRepository, berdim"
-    this.repository = repository;
-}
-```
-
-## 4-bosqich: Aware interfeyslari
-
-Agar bean ma'lum bir Aware interfeysini implement qilgan bolsa, Spring u orqali malumot beradi:
+Eng ko'p ishlatiladigan lifecycle annotation'lar:
 
 ```java
 @Component
-public class MyBean implements ApplicationContextAware {
-    private ApplicationContext applicationContext;
-    
-    @Override
-    public void setApplicationContext(ApplicationContext context) {
-        // Spring: "Mana ApplicationContext ni ham berdim"
-        this.applicationContext = context;
+public class DatabaseConnectionPool {
+
+    @PostConstruct  // Bean tayyor bo'lgandan keyin — bir marta ishlaydi
+    public void initialize() {
+        System.out.println("Ulanishlar ochilyapti...");
+        // DB ga ulanishlarni yaratish
+    }
+
+    @PreDestroy     // Bean yo'q qilinishidan oldin — bir marta ishlaydi
+    public void cleanup() {
+        System.out.println("Ulanishlar yopilyapti...");
+        // Barcha ulanishlarni yopish
     }
 }
 ```
 
-## 5-6-7-bosqich: Init va PostProcessors
+`@PostConstruct` qachon kerak? Ma'lumotlar bazasiga ulanish o'rnatish, kesh to'ldirish, konfiguratsiyani tekshirish — bir marta bajariladigan ishlar uchun.
 
-@PostConstruct - bean tayyor bolganda ishlaydi:
-
-```java
-@Component
-public class DatabaseConnection {
-    @PostConstruct  // Bean tayyor, bir marta ishga tush
-    public void connect() {
-        System.out.println("Databasaga ulanildi");
-    }
-}
-```
-
-## 8-bosqich: Bean yogotiladi
-
-ApplicationContext yopilganda yoki bean hayot davri tugaganda:
-
-```java
-@Component
-public class DatabaseConnection {
-    @PreDestroy  // Bean olishidan oldin
-    public void disconnect() {
-        System.out.println("Database uzildi");
-    }
-}
-```
-
-## Bean lifecycle ni korish
+## Lifecycle ni to'liq ko'rish
 
 ```java
 @Component
 public class LifecycleDemo {
-    
+
     public LifecycleDemo() {
-        System.out.println("1. Constructor: Bean yaratildi");
+        System.out.println("1. Konstruktor: Bean yaratildi");
     }
-    
+
     @Autowired
-    public void setDependency(Dependency dep) {
-        System.out.println("2. Bogliqlik yuklandi");
+    public void setRepository(UserRepository repository) {
+        System.out.println("2. DI: Bog'liqlik yuklandi");
     }
-    
+
     @PostConstruct
     public void init() {
-        System.out.println("3. @PostConstruct: Boshlangich sozlamalar");
+        System.out.println("3. @PostConstruct: Boshlang'ich sozlamalar");
     }
-    
+
     @PreDestroy
     public void destroy() {
-        System.out.println("4. @PreDestroy: Bean ketadi");
+        System.out.println("4. @PreDestroy: Bean o'chirilmoqda");
     }
 }
 ```
 
-Natija:
+Dastur ishga tushganda konsolda:
 ```
-1. Constructor: Bean yaratildi
-2. Bogliqlik yuklandi
-3. @PostConstruct: Boshlangich sozlamalar
+1. Konstruktor: Bean yaratildi
+2. DI: Bog'liqlik yuklandi
+3. @PostConstruct: Boshlang'ich sozlamalar
    ... dastur ishlaydi ...
-4. @PreDestroy: Bean ketadi
+4. @PreDestroy: Bean o'chirilmoqda
 ```
 
-## Bean scope'lari
+## Bean Scope — necha marta yaratiladi?
 
-Bean necha marta yaratilishi scope ga bogliq:
-
-| Scope | Necha marta yaratiladi | Qachon ishlatiladi |
-|-------|----------------------|-------------------|
-| singleton | 1 marta (default) | Umumiy xizmatlar |
-| prototype | Har safar | Holatli obektlar |
-| request | Har bir HTTP so'rovda | Web ilovalar |
-| session | Har bir sessiyada | Web ilovalar |
-| application | Servlet kontekstida | Web ilovalar |
+Scope — beanning "yashash doirasi". Default — `singleton`: butun ilova davomida faqat bitta obyekt.
 
 ```java
+// Singleton (default) — bitta obyekt, hamma joyda shu
 @Component
-@Scope("prototype")  // Har safar yangi obekt
-public class ShoppingCart {
-    // Har bir foydalanuvchi uchun alohida savat
+public class UserService { ... }
+
+// Prototype — har safar yangi obyekt
+@Component
+@Scope("prototype")
+public class ShoppingCart { ... }
+
+// Request scope — har bir HTTP so'rov uchun yangi obyekt
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class RequestContext { ... }
+```
+
+Qachon qaysi scope?
+
+`singleton` — stateless, umumiy servislar uchun (`UserService`, `EmailService`). Spring da ko'pchilik beanlar singleton bo'lishi kerak.
+
+`prototype` — har bir foydalanuvchi uchun alohida holat saqlanadigan holatda (`ShoppingCart`).
+
+`request/session` — faqat web ilovalarda, har bir so'rov yoki sessiya uchun alohida holat kerak bo'lganda.
+
+## InitializingBean va DisposableBean (eski usul)
+
+```java
+// Eski usul — hozir @PostConstruct/@PreDestroy ishlatiladi
+@Component
+public class LegacyBean implements InitializingBean, DisposableBean {
+
+    @Override
+    public void afterPropertiesSet() {
+        // @PostConstruct ekvivalenti
+    }
+
+    @Override
+    public void destroy() {
+        // @PreDestroy ekvivalenti
+    }
 }
 ```
 
-## Xulosa
-
-Bean lifecycle = Spring beanning tugilishidan olgungacha bolgan jarayon.
-
-- Spring beanni yaratadi
-- Bogliqliklarni yuklaydi
-- @PostConstruct ishlaydi
-- Bean ishlatiladi
-- @PreDestroy ishlaydi
-- Bean yogotiladi
+Bu interfeyslarni ko'rsangiz — bu eski Spring kodi. Yangi kodda `@PostConstruct` va `@PreDestroy` ishlating.

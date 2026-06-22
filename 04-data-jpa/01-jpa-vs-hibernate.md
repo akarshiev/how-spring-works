@@ -1,125 +1,108 @@
-# JPA vs Hibernate - Farqi nima?
+# JPA vs Hibernate — Farqi nima?
 
-## JPA nima?
+Bu ikki atama tez-tez aralashtiriladi. Farqni bir marta tushunib olish kerak.
 
-JPA = Jakarta Persistence API (avvalgi Java Persistence API)
+## JPA — standart
 
-JPA - bu **standart** (qoidalar toplami). U faqat qoidalarni belgilaydi, ozi hech narsa qilmaydi.
+JPA (Jakarta Persistence API) — bu spetsifikatsiya. Qoidalar to'plami. Kod emas.
 
-JPA ning qoidalari:
+JPA Javada ma'lumotlar bazasi bilan ishlash uchun qanday annotation'lar bo'lishi, qanday interfeys bo'lishi kerakligini belgilaydi:
 
 ```java
-// JPA qoidasi: "Entity lar @Entity annotation bilan belgilansin"
+// JPA qoidasi: Entity @Entity bilan belgilansin
 @Entity
 public class User { ... }
 
-// JPA qoidasi: "Primary key @Id bilan belgilansin"
+// JPA qoidasi: Primary key @Id bo'lsin
 @Id
 private Long id;
 
-// JPA qoidasi: "Malumotlar bazasiga savol @Query bilan yozilsin"
-@Query("SELECT u FROM User u WHERE u.email = ?1")
-User findByEmail(String email);
+// JPA qoidasi: Ma'lumotlar olish uchun EntityManager bo'lsin
+EntityManager em;
+em.find(User.class, 1L);
 ```
 
-JPA faqat qoidalar. Uni ishlatib bolmaydi.
+JPA — faqat qoidalar. Uni bitta o'zi ishlatib bo'lmaydi.
 
-## Hibernate nima?
+## Hibernate — implementatsiya
 
-Hibernate - bu **implementatsiya**. JPA qoidalarini bajaradigan haqiqiy kod.
+Hibernate — JPA qoidalarini bajaradigan haqiqiy kod. JPA'ning eng mashhur implementatsiyasi.
 
-JPA = qoidalar (interfeys)
-Hibernate = kod (interfeysni implement qilgan klass)
-
-```java
-// JPA qoidasi (interfeys):
-// javax.persistence.EntityManager
-
-// Hibernate implementatsiyasi (haqiqiy kod):
-// org.hibernate.internal.SessionImpl
+```
+JPA (interfeys/qoidalar)          → Hibernate (kod/implementatsiya)
+javax.persistence.EntityManager   → org.hibernate.Session
+@Entity, @Id, @OneToMany          → SQL ga aylantiradi
 ```
 
-## Analogiya
+Analogiya: JPA = "Siz ma'lumotlar bazasi bilan ishlash uchun interfeys bo'lishi kerak" deydi. Hibernate = shu interfeysi amalga oshiradi.
 
-Tasavvur qiling, siz uy qurmoqchisiz.
+## Spring Data JPA — uchinchi qatlam
 
-- **JPA** = uy qurish qoidalari (poydevor, devor, tom bolishi kerak). Bu qogozdagi qoidalar.
-- **Hibernate** = usta. Qoidalarni biladi va uyni quradi.
+Spring Data JPA — Hibernate ustiga qurilgan qatlam. JpaRepository kabi yordamchi mexanizmlar beradi:
 
-JPA yo'q, Hibernate yo'q -> SQL yozasiz:
+```
+Spring Data JPA      ← Siz buni ishlatasiz (JpaRepository)
+       |
+       v
+JPA (standart)       ← Oraliq qoida qatlami
+       |
+       v
+Hibernate            ← SQL yozadigan haqiqiy kod
+       |
+       v
+PostgreSQL/MySQL     ← Ma'lumotlar bazasi
+```
+
+## Springsiz SQL — qiyinchilik
 
 ```java
-// Hech qanday framework yo'q - qo'lda SQL
+// JPA'siz — qo'lda SQL
 String sql = "SELECT * FROM users WHERE id = ?";
 PreparedStatement stmt = connection.prepareStatement(sql);
-stmt.setLong(1, 5);
+stmt.setLong(1, userId);
 ResultSet rs = stmt.executeQuery();
+
 User user = new User();
 user.setId(rs.getLong("id"));
 user.setName(rs.getString("name"));
+user.setEmail(rs.getString("email"));
+// ... har bir ustun uchun
 ```
 
-JPA + Hibernate bilan:
+## Spring Data JPA bilan
 
 ```java
-@Query("SELECT u FROM User u WHERE u.id = ?1")
-User findById(Long id);
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+}
+
+// Ishlatish
+User user = userRepository.findById(1L).orElseThrow();
 ```
 
-## JPA ning asosiy qismlari
+Hibernate SQL ni o'zi yozdi: `SELECT u.* FROM users u WHERE u.id = ?`
 
-| JPA standarti | Nima qiladi? |
-|---------------|-------------|
-| @Entity | Klassni malumotlar bazasi jadvaliga bog'laydi |
-| @Id | Primary key ni belgilaydi |
-| @Column | Jadval ustunini sozlaydi |
-| @OneToMany | Bir-birga bogliqlik |
-| EntityManager | Malumotlar bazasi bilan ishlash |
-| JPQL | Java tilida SQL (JPA Query Language) |
-| Criteria API | Kod orqali so'rov yozish |
+## application.properties'da Hibernate
 
-## Hibernate ning qoshimcha imkoniyatlari
+```properties
+# Hibernate SQL ni konsolga chiqarish (development uchun)
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
 
-Hibernate JPA dan tashqari qoshimcha imkoniyatlarga ega:
+# Jadvallar bilan nima qilish kerak?
+# validate — faqat mosligini tekshiradi (production)
+# update  — yangi ustun/jadval qo'shadi (development)
+# create  — har safar jadvalni o'chirib qayta yaratadi (test)
+# none    — hech narsa qilmaydi
+spring.jpa.hibernate.ddl-auto=validate
 
-- **Caching** - malumotlarni keshlash (1-darajali va 2-darajali kesh)
-- **Lazy loading** - malumotlarni kerak paytda yuklash
-- **Auto DDL** - jadvallarni avtomatik yaratish
-- **Hibernate-specific annotations** - JPA da yo'q qoshimcha annotatsiyalar
-
-## Spring Bootda qanday ishlaydi?
-
-Spring Data JPA qoshilganda:
-
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-jpa</artifactId>
-</dependency>
-```
-
-Bu starter 3 ta narsani olib keladi:
-
-1. **JPA** - standart (qoidalar)
-2. **Hibernate** - JPA ni implement qiladi
-3. **Spring Data JPA** - Springning JPA ga qoshimcha qulayliklari
-
-```
-Spring Data JPA
-       |
-       v
-    JPA (standart qoidalar)
-       |
-       v
-Hibernate (qoidalarni bajaruvchi)
-       |
-       v
- Malumotlar bazasi
+# PostgreSQL dialect
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
 ```
 
 ## Xulosa
 
-- JPA = qoidalar (interfeys)
-- Hibernate = qoidalarni bajaruvchi (kod)
-- Spring Data JPA = JPA ni oson ishlatish uchun qoshimcha
-- Siz @Query va @Entity larni ishlatasiz -> Hibernate SQL ni yozadi
+JPA — qoidalar (interfeys). Hibernate — qoidalarni bajaruvchi (kod). Spring Data JPA — Hibernate ustida qurilgan, `JpaRepository` kabi qulayliklar beradi. Amalda siz `@Entity`, `JpaRepository` yozasiz — Hibernate SQL ni yozadi.
+
+Boshqa JPA implementatsiyalari ham bor (EclipseLink, OpenJPA), lekin Spring Boot'da Hibernate default.

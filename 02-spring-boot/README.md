@@ -1,29 +1,15 @@
 # Spring Boot
 
-Spring Boot - Spring Frameworkni oson ishlatish uchun qilingan qoshimcha.
+Spring Framework'ni minimal konfiguratsiya bilan tez ishga tushirish uchun. "Convention over configuration" printsipi.
 
 ## Mavzular
 
-1. **01-auto-configuration.md** -> @SpringBootApplication ichida nima bor?
-2. **02-starter-dependencies.md** -> Starterlar qanday ishlaydi?
-3. **03-application-properties.md** -> application.properties vs yaml
-4. **04-profiles.md** -> profile lar
-5. **05-embedded-server.md** -> Tomcat ichki qanday ishlaydi?
+`01-auto-configuration.md` — `@SpringBootApplication` ichida nima bor, auto-configuration qanday ishlaydi.
 
-## Nima farqi bor?
+`02-starter-dependencies.md` — Starter nima, qanday ishlaydi, Spring Boot Parent BOM.
 
-Oddiy Springda:
+`03-application-properties.md` — `application.properties` vs `application.yml`, `@Value`, `@ConfigurationProperties`.
 
-```java
-// XML fayllar, config fayllar, maven qoshimchalari... ko'p ish
-```
+`04-profiles.md` — dev/prod/test profillari, `@Profile`, profil fayllar.
 
-Spring Bootda:
-
-```java
-// 1 satr kod bilan hamma narsa tayyor
-@SpringBootApplication
-public class App { public static void main(String[] args) { SpringApplication.run(App.class, args); }}
-```
-
-Spring Boot = Spring + avtomatik sozlash + server ichida
+`05-embedded-server.md` — Tomcat qanday ichida ishlaydi, port o'zgartirish, Undertow bilan almashtirish.

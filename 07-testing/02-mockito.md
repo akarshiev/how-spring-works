@@ -1,178 +1,199 @@
-# Mockito - Mock, Stub, @MockBean
+# Mockito — Mock, Stub, @MockBean
+
+Unit testda har bir klass izolyatsiyada tekshiriladi. `UserService` testida haqiqiy ma'lumotlar bazasiga ulanmaslik kerak. Mockito soxta obyektlar (mock) yaratish orqali shu muammoni hal qiladi.
 
 ## Mock nima?
 
-Mock = soxta obekt. Haqiqiy obektni "taqlid qiladigan" obekt.
-
-Nega mock kerak?
-
-- Malumotlar bazasiga bogliq metodni test qilish
-- Email yuborishni test qilish (haqiqiy email yubormasdan)
-- Tashqi API ga bogliq kodni test qilish
-
-## @Mock - Soxta obekt yaratish
+Mock — real klass o'rniga ishlaydigan "qo'g'irchoq". Qo'ng'iroqlarni yozib oladi va siz belgilagan javoblarni qaytaradi.
 
 ```java
-// Mock yaratish
-@Mock
-private UserRepository userRepository;
+// Haqiqiy UserRepository — DB'ga murojaat qiladi
+// Mock UserRepository — siz aytganini qaytaradi
 
-// Yoki
-private UserRepository userRepository = mock(UserRepository.class);
+UserRepository realRepo = ...;         // DB'ga ulanish, test uchun noqulay
+UserRepository mockRepo = mock(UserRepository.class);  // Soxta, biz nazorat qilamiz
 ```
 
-## @InjectMocks - Mock larni ulash
+## @ExtendWith(MockitoExtension.class)
 
 ```java
-// UserService ga @Mock larni avtomatik yuklaydi
-@InjectMocks
-private UserService userService;
-```
-
-To'liq misol:
-
-```java
-@ExtendWith(MockitoExtension.class)  // Mockito ni yoqish
+@ExtendWith(MockitoExtension.class)  // Mockito'ni JUnit 5 bilan ulash
 class UserServiceTest {
-    
+
     @Mock
-    private UserRepository userRepository;
-    
+    private UserRepository userRepository;  // Soxta repository
+
     @Mock
-    private EmailService emailService;
-    
-    @InjectMocks  // UserService ga mock larni yuklaydi
-    private UserService userService;
-    
+    private EmailService emailService;      // Soxta email service
+
+    @InjectMocks
+    private UserService userService;        // @Mock'larni UserService'ga inject qiladi
+
     @Test
-    void shouldRegisterUser() {
-        // Given
-        User user = new User("Ali", "ali@example.com");
-        when(userRepository.save(any(User.class)))     // Stub
-            .thenReturn(new User(1L, "Ali", "ali@example.com"));
-        
+    void shouldReturnUserWhenFound() {
+        // Given — stub: "findById(1) chaqirilsa, bu userni qaytar"
+        User user = new User(1L, "Ali", "ali@example.com");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
         // When
-        User result = userService.register(user);
-        
+        UserResponse result = userService.findById(1L);
+
         // Then
-        assertEquals(1L, result.getId());
         assertEquals("Ali", result.getName());
-        
-        // Tekshirish: save metodi 1 marta chaqirilganmi?
-        verify(userRepository, times(1)).save(any(User.class));
-        
-        // Tekshirish: emailService.sendWelcome 1 marta chaqirilganmi?
-        verify(emailService, times(1)).sendWelcome("ali@example.com");
+        assertEquals("ali@example.com", result.getEmail());
     }
 }
 ```
 
-## Stub - Mock ga javob berish
-
-Stub = "agar bu metod shu parametr bilan chaqirilsa, mana shu javobni qaytar"
+## when().thenReturn() — Stub
 
 ```java
-// -------- WHEN (qachon) --------
-
-// 1. Qiymat qaytarish
+// Qiymat qaytarish
 when(repository.findById(1L)).thenReturn(Optional.of(user));
 when(repository.findAll()).thenReturn(List.of(user1, user2));
+when(repository.count()).thenReturn(100L);
 
-// 2. Exception tashlash
+// Exception tashlash
 when(repository.findById(999L)).thenThrow(new UserNotFoundException(999L));
 
-// 3. Bir nechta javob
-when(repository.findById(1L))
-    .thenReturn(Optional.of(user1))     // 1-marta
-    .thenReturn(Optional.of(user2));    // 2-marta
+// Argumentga qarab
+when(repository.findById(anyLong())).thenReturn(Optional.of(user));    // Har qanday Long
+when(repository.findByEmail(eq("ali@example.com"))).thenReturn(Optional.of(user)); // Aniq
 
-// 4. Har qanday argument bilan
-when(repository.save(any(User.class))).thenReturn(user);
-when(repository.findById(anyLong())).thenReturn(Optional.of(user));
+// Ketma-ket turli javoblar
+when(repository.findAll())
+    .thenReturn(List.of(user1))   // 1-chaqiruvda
+    .thenReturn(List.of(user2));  // 2-chaqiruvda
 
-// 5. Aniq argument bilan
-when(repository.save(eq(user))).thenReturn(user);
+// void metodlar
+doNothing().when(emailService).send(anyString(), anyString());
+doThrow(new RuntimeException()).when(emailService).send(eq("bad@email.com"), anyString());
 ```
 
-## Verify - Mock ni tekshirish
-
-Verify = "bu metod chaqirilganmi, necha marta chaqirilgan?"
+## verify() — chaqirilganini tekshirish
 
 ```java
-// -------- VERIFY (tekshirish) --------
+@Test
+void shouldSendEmailAfterRegistration() {
+    // Given
+    CreateUserRequest request = new CreateUserRequest("Ali", "ali@example.com", "pass123");
+    when(userRepository.save(any())).thenReturn(savedUser);
 
-// 1. 1 marta chaqirilgan
-verify(repository).save(user);
-verify(repository, times(1)).save(user);
+    // When
+    userService.register(request);
 
-// 2. 2 marta chaqirilgan
-verify(repository, times(2)).save(user);
+    // Then — verify
+    verify(userRepository, times(1)).save(any(User.class));   // 1 marta chaqirilganmi?
+    verify(emailService, times(1)).sendWelcome("ali@example.com");
+    verify(userRepository, never()).delete(any());            // Hech qachon chaqirilmaganmi?
+}
 
-// 3. Hech qachon chaqirilmagan
-verify(repository, never()).delete(any());
-
-// 4. Kamida 1 marta
-verify(repository, atLeast(1)).findById(1L);
-
-// 5. Eng kop 3 marta
-verify(repository, atMost(3)).findAll();
+// Boshqa verify opsiyalari
+verify(repo, times(2)).save(any());      // Aniq 2 marta
+verify(repo, atLeast(1)).findAll();      // Kamida 1 marta
+verify(repo, atMost(3)).count();         // Ko'pi bilan 3 marta
+verifyNoInteractions(emailService);      // Umuman chaqirilmaganmi?
+verifyNoMoreInteractions(userRepository); // Faqat verify'dagi chaqiruvlar bo'lgan?
 ```
 
-## @MockBean - Spring Boot da mock
-
-Spring Boot testlarida:
+## ArgumentCaptor — argument qiymatini ushlash
 
 ```java
-@SpringBootTest
-class UserControllerTest {
-    
-    @Autowired
-    private MockMvc mockMvc;
-    
-    @MockBean  // Spring contextdagi haqiqiy bean ni mock ga almashtiradi
-    private UserService userService;
-    
-    @Test
-    void shouldReturnUser() throws Exception {
-        // Given
-        when(userService.findById(1L))
-            .thenReturn(new UserResponse(1L, "Ali", "ali@example.com"));
-        
-        // When & Then
-        mockMvc.perform(get("/api/users/1"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.name").value("Ali"));
-    }
+@Test
+void savedUserShouldHaveEncodedPassword() {
+    // Given
+    CreateUserRequest request = new CreateUserRequest("Ali", "ali@example.com", "plainPassword");
+    ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+
+    // When
+    userService.register(request);
+
+    // Then — save'ga nima berilganini tekshirish
+    verify(userRepository).save(userCaptor.capture());
+
+    User capturedUser = userCaptor.getValue();
+    assertNotEquals("plainPassword", capturedUser.getPassword());  // Ochiq parol emas
+    assertTrue(passwordEncoder.matches("plainPassword", capturedUser.getPassword()));  // Encoded
 }
 ```
 
-## @Spy - Qisman mock
+## @Spy — qisman mock
 
 ```java
 @ExtendWith(MockitoExtension.class)
-class SpyExampleTest {
-    
-    @Spy  // Haqiqiy obekt, lekin ayrim metodlarni mock qilish mumkin
-    private List<String> list = new ArrayList<>();
-    
+class UserServiceTest {
+
+    @Spy
+    private UserMapper userMapper = new UserMapperImpl();  // Haqiqiy obyekt
+
     @Test
-    void shouldUseSpy() {
+    void shouldCallRealMapper() {
+        User user = new User(1L, "Ali", "ali@example.com");
+
         // Haqiqiy metod ishlaydi
-        list.add("Ali");
-        assertEquals(1, list.size());
-        
-        // Mock qilish
-        when(list.size()).thenReturn(100);
-        assertEquals(100, list.size());  // Haqiqiy emas, mock javob
+        UserResponse response = userMapper.toResponse(user);
+        assertEquals("Ali", response.getName());
+
+        // Ayrim metodlarni mock qilish mumkin
+        doReturn(new UserResponse()).when(userMapper).toResponse(any());
     }
 }
 ```
 
-## Xulosa
+## @MockBean — Spring Boot testlarida
 
-- @Mock -> soxta obekt yaratadi
-- @InjectMocks -> mock larni obyektga yuklaydi
-- when().thenReturn() -> stub (javob berish)
-- verify() -> chaqirilganligini tekshirish
-- @MockBean -> Spring testlarda haqiqiy bean ni almashtiradi
-- @Spy -> haqiqiy obekt, ayrim metodlari mock
+Spring'ning haqiqiy bean'ini mock bilan almashtirish:
+
+```java
+@WebMvcTest(UserController.class)  // Faqat Web qatlami
+class UserControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean  // Spring contextdagi UserService'ni mock bilan almashtiradi
+    private UserService userService;
+
+    @Test
+    void getUserShouldReturn200WithUserData() throws Exception {
+        // Given
+        UserResponse userResponse = new UserResponse(1L, "Ali", "ali@example.com");
+        when(userService.findById(1L)).thenReturn(userResponse);
+
+        // When & Then
+        mockMvc.perform(get("/api/users/1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(1))
+            .andExpect(jsonPath("$.name").value("Ali"))
+            .andExpect(jsonPath("$.email").value("ali@example.com"));
+    }
+
+    @Test
+    void getUserShouldReturn404WhenNotFound() throws Exception {
+        // Given
+        when(userService.findById(999L)).thenThrow(new UserNotFoundException(999L));
+
+        // When & Then
+        mockMvc.perform(get("/api/users/999"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.status").value(404));
+    }
+
+    @Test
+    void createUserShouldReturn201() throws Exception {
+        // Given
+        String requestBody = """
+            {"name": "Ali", "email": "ali@example.com", "password": "pass123"}
+            """;
+        UserResponse response = new UserResponse(1L, "Ali", "ali@example.com");
+        when(userService.create(any())).thenReturn(response);
+
+        // When & Then
+        mockMvc.perform(post("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(1));
+    }
+}
+```

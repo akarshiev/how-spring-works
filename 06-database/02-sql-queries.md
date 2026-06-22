@@ -1,38 +1,28 @@
-# SQL Queries - JOIN, Subquery, Index
+# SQL Queries — JOIN, Subquery, Index
 
-## JOIN - Jadvallarni birlashtirish
+## JOIN — jadvallarni birlashtirish
 
-JOIN ikki jadvalni bir-biriga ulash uchun ishlatiladi.
+Ko'pgina hollarda ma'lumotlar bir nechta jadvalda bo'ladi. JOIN ularni birlashtirib so'rov qilish imkonini beradi.
 
-```sql
--- users jadvali
--- +----+-------+---------------------+
--- | id | name  | email               |
--- +----+-------+---------------------+
--- | 1  | Ali   | ali@example.com     |
--- | 2  | Vali  | vali@example.com    |
--- +----+-------+---------------------+
-
--- orders jadvali
--- +----+---------+--------+---------+
--- | id | product | amount | user_id |
--- +----+---------+--------+---------+
--- | 1  | Laptop  | 2000   | 1       |
--- | 2  | Mouse   | 50     | 1       |
--- | 3  | Keyboard| 100    | 2       |
--- +----+---------+--------+---------+
+```
+users:                    orders:
++----+-------+            +----+---------+--------+---------+
+| id | name  |            | id | product | amount | user_id |
++----+-------+            +----+---------+--------+---------+
+| 1  | Ali   |            | 1  | Laptop  | 2000   | 1       |
+| 2  | Vali  |            | 2  | Mouse   | 50     | 1       |
+| 3  | Guli  |            | 3  | Keyboard| 100    | 2       |
++----+-------+            +----+---------+--------+---------+
 ```
 
-### INNER JOIN
-
-Faqat ikkala jadvalda ham bor malumotlarni oladi.
+### INNER JOIN — ikkalasida ham bor
 
 ```sql
 SELECT u.name, o.product, o.amount
 FROM users u
 INNER JOIN orders o ON u.id = o.user_id;
 
--- Natija:
+-- Natija: Faqat buyurtmasi bor foydalanuvchilar
 -- +------+---------+--------+
 -- | name | product | amount |
 -- +------+---------+--------+
@@ -40,100 +30,160 @@ INNER JOIN orders o ON u.id = o.user_id;
 -- | Ali  | Mouse   | 50     |
 -- | Vali | Keyboard| 100    |
 -- +------+---------+--------+
+-- Guli yo'q — buyurtmasi yo'q
 ```
 
-### LEFT JOIN
-
-Users jadvalidagi hamma qatorlarni oladi, orders da bolmasa NULL.
+### LEFT JOIN — chap jadvalning barchasi
 
 ```sql
 SELECT u.name, o.product, o.amount
 FROM users u
 LEFT JOIN orders o ON u.id = o.user_id;
 
--- Natija: Agar 3-userning orderi bolmasa, NULL korsatiladi
+-- Natija: Barcha foydalanuvchilar, buyurtmasi yo'q bo'lsa NULL
+-- +------+---------+--------+
+-- | name | product | amount |
+-- +------+---------+--------+
+-- | Ali  | Laptop  | 2000   |
+-- | Ali  | Mouse   | 50     |
+-- | Vali | Keyboard| 100    |
+-- | Guli | NULL    | NULL   |  ← Buyurtmasi yo'q, lekin chiqadi
+-- +------+---------+--------+
 ```
 
-### RIGHT JOIN
-
-Orders jadvalidagi hamma qatorlarni oladi.
-
-### FULL JOIN
-
-Ikkala jadvalning hamma qatorlarini oladi.
-
-## Subquery - Ichki so'rov
-
-Bir SELECT ning ichida ikkinchi SELECT.
+### Aggregatsiya bilan JOIN
 
 ```sql
--- Eng katta order summasini topish
-SELECT * FROM orders 
-WHERE amount = (SELECT MAX(amount) FROM orders);
+SELECT
+    u.name,
+    COUNT(o.id) AS order_count,
+    COALESCE(SUM(o.amount), 0) AS total_spent
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+GROUP BY u.id, u.name
+ORDER BY total_spent DESC;
+```
 
--- Eng kop order bergan foydalanuvchi
-SELECT * FROM users 
+## Subquery — ichki so'rov
+
+Bir `SELECT` ichida boshqa `SELECT`:
+
+```sql
+-- Eng katta buyurtma summasiga ega foydalanuvchi
+SELECT name FROM users
 WHERE id = (
-    SELECT user_id 
-    FROM orders 
-    GROUP BY user_id 
-    ORDER BY COUNT(*) DESC 
+    SELECT user_id FROM orders
+    ORDER BY amount DESC
     LIMIT 1
+);
+
+-- O'rtacha sumadan ko'p xarid qilganlar
+SELECT u.name, o.amount
+FROM users u
+JOIN orders o ON u.id = o.user_id
+WHERE o.amount > (SELECT AVG(amount) FROM orders);
+
+-- IN bilan subquery
+SELECT * FROM users
+WHERE id IN (
+    SELECT DISTINCT user_id FROM orders WHERE amount > 1000
 );
 ```
 
-## Index - Tezlikni oshirish
+## CTE — Common Table Expression (WITH)
 
-Index = jadvaldagi malumotlarni tez qidirish uchun maxsus tuzilma.
+Murakkab so'rovlarni o'qilishi oson qiladi:
 
 ```sql
--- Index yaratish
+WITH monthly_revenue AS (
+    SELECT
+        DATE_TRUNC('month', created_at) AS month,
+        SUM(amount) AS revenue
+    FROM orders
+    GROUP BY DATE_TRUNC('month', created_at)
+),
+top_customers AS (
+    SELECT user_id, SUM(amount) AS total
+    FROM orders
+    WHERE created_at >= NOW() - INTERVAL '3 months'
+    GROUP BY user_id
+    HAVING SUM(amount) > 500
+)
+SELECT u.name, tc.total
+FROM users u
+JOIN top_customers tc ON u.id = tc.user_id
+ORDER BY tc.total DESC;
+```
+
+## Index — qidiruvni tezlashtirish
+
+Index — jadvaldagi ma'lumotlarni tez qidirish uchun maxsus tuzilma. Kitobdagi mundarija kabi ishlaydi.
+
+```sql
+-- Oddiy index
 CREATE INDEX idx_users_email ON users(email);
 
--- Unique index
+-- Ko'p ustunli index
+CREATE INDEX idx_orders_user_date ON orders(user_id, created_at);
+
+-- Unikal index (UNIQUE constraint ham hosil qiladi)
 CREATE UNIQUE INDEX idx_users_email_unique ON users(email);
 
--- Murakkab index (bir nechta ustun)
-CREATE INDEX idx_users_name_email ON users(name, email);
+-- Qisman index — faqat aktiv foydalanuvchilar
+CREATE INDEX idx_users_active_email ON users(email) WHERE is_active = true;
+
+-- Index ni o'chirish
+DROP INDEX idx_users_email;
 ```
 
-### Index qachon kerak?
+### Qachon index kerak?
 
 ```sql
--- Index kerak (tez-tez qidiriladi):
+-- FOYDALI — WHERE, JOIN, ORDER BY'da ko'p ishlatiladigan ustunlar
+CREATE INDEX idx_orders_user_id ON orders(user_id);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_orders_created_at ON orders(created_at);
+
+-- FOYDASIZ — kamdan-kam filtrlash uchun, kichik jadvallar uchun
+-- Boolean ustunlar (SELECT * WHERE is_active — natija 50% qator)
+```
+
+### Index'ni tekshirish
+
+```sql
+-- Query'ning bajarilish rejasini ko'rish
+EXPLAIN ANALYZE
 SELECT * FROM users WHERE email = 'ali@example.com';
-SELECT * FROM users WHERE name = 'Ali';
 
--- Index kerak emas (butun jadval oqiladi):
-SELECT * FROM users;
+-- Natijada "Index Scan" bo'lsa — index ishlatilmoqda
+-- "Seq Scan" bo'lsa — indeks yo'q yoki ishlatilmayapti
 ```
 
-### Index qachon zararli?
+## PostgreSQL'ga xos imkoniyatlar
 
-- Kop yozish (INSERT/UPDATE) boladigan jadvallarda
-- Kichik jadvallarda (100 qatordan kam)
-- Kam ishlatiladigan ustunlarda
+```sql
+-- JSONB
+CREATE TABLE products (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255),
+    attributes JSONB
+);
 
-## SQL da murakkab query lar
+INSERT INTO products VALUES (1, 'Noutbuk', '{"brand": "Dell", "ram": 16}');
 
-```java
-@Query(value = """
-    SELECT u.name, COUNT(o.id) as order_count, SUM(o.amount) as total_spent
-    FROM users u
-    LEFT JOIN orders o ON u.id = o.user_id
-    WHERE u.is_active = true
-    GROUP BY u.id, u.name
-    HAVING COUNT(o.id) >= :minOrders
-    ORDER BY total_spent DESC
-    """, nativeQuery = true)
-List<Object[]> findTopCustomers(@Param("minOrders") int minOrders);
+SELECT * FROM products WHERE attributes->>'brand' = 'Dell';
+SELECT * FROM products WHERE (attributes->>'ram')::int > 8;
+
+-- Full-text search
+SELECT * FROM users
+WHERE to_tsvector('english', name || ' ' || email) @@ plainto_tsquery('ali example');
+
+-- ARRAY
+SELECT * FROM articles WHERE 'java' = ANY(tags);
+
+-- Window function
+SELECT name, amount,
+    RANK() OVER (ORDER BY amount DESC) AS rank,
+    SUM(amount) OVER () AS total
+FROM orders;
 ```
-
-## Xulosa
-
-- JOIN -> jadvallarni ulash
-- INNER JOIN -> ikkala jadvalda ham borlar
-- LEFT JOIN -> birinchi jadvaldagi hammasi
-- Subquery -> ichma-ich so'rovlar
-- Index -> qidirishni tezlashtiradi
-- INDEX -> SELECT ni tezlashtiradi, INSERT/UPDATE ni sekinlashtiradi

@@ -1,128 +1,134 @@
 # IoC Container qanday ishlaydi?
 
-## Inversion of Control - bu nima?
+IoC (Inversion of Control) — eng muhim tushunchalardan biri. Nomidan qo'rqmang: aslida oddiy narsa.
 
-"Inversion of Control" degan qorqinchli soz. Aslida oddiy narsa.
+## Nazorat kimda?
 
-Oddiy dasturda siz obektlarni ozingiz yaratasiz. Bu "Control" (nazorat) sizda. IoC bilan esa bu nazorat Springga otadi. Ya'ni "Control" teskari boladi (Inversion).
+Oddiy dasturda siz obyektlarni o'zingiz yaratasiz. Nazorat **sizda**.
 
-## Real hayot misoli
+IoC bilan bu nazorat Springga o'tadi. "Control" teskari bo'ladi — shuning uchun "Inversion of Control".
 
-Oddiy hayotda:
-
-- **Siz** non yopmoqchi bolsangiz, **ozingiz** un, suv, tuz aralashtirasiz -> **ozingiz** tandirga ursiz
-- Bu sizning "Control"ingizda
-
-IoC bilan:
-
-- Siz faqat "non kerak" deysiz -> **Nonvoy** (Spring) hamma narsani tayyorlab beradi
-- "Control" nonvoyda (Springda)
-
-## Kod bilan tushuntirish
-
-### Springsiz (Control sizda):
+**Springsiz — nazorat sizda:**
 
 ```java
 public class Main {
     public static void main(String[] args) {
-        // Siz hamma narsani ozingiz qilasiz
+        // Siz qachon, qanday yaratishni boshqarasiz
         DatabaseConfig config = new DatabaseConfig("localhost", "5432");
         DataSource dataSource = new DataSource(config);
         UserRepository repository = new UserRepository(dataSource);
         UserService service = new UserService(repository);
-        
+
         service.findUser(1L);
     }
 }
 ```
 
-Bu yerda siz obektlarni qachon va qanday yaratishni boshqaryapsiz.
-
-### Spring bilan (Control Springda):
+**Spring bilan — nazorat Springda:**
 
 ```java
-@Service  // Spring: "Bu UserService ni men boshqaraman"
+@Service
 public class UserService {
     private final UserRepository repository;
-    
-    // Spring: "Unga UserRepository kerak ekan, beraman"
+
+    // Spring: "UserService ga UserRepository kerak — beraman"
     public UserService(UserRepository repository) {
         this.repository = repository;
     }
 }
 ```
 
-@Configuration faylida Springga aytasiz:
-
-```java
-@Configuration
-public class AppConfig {
-    @Bean
-    public UserService userService() {
-        return new UserService(userRepository());
-    }
-    
-    @Bean
-    public UserRepository userRepository() {
-        return new UserRepository();
-    }
-}
-```
-
-Yoki undan ham osoni - Spring Bootda:
-
-```java
-@SpringBootApplication  // Bu Springga: "Hamma narsani ozing qil"
-public class Application {
-    public static void main(String[] args) {
-        SpringApplication.run(Application.class, args);
-    }
-}
-```
-
-## IoC Container qanday ishlaydi?
-
-IoC Container - bu Springning yuragi. U 3 ta asosiy ish qiladi:
-
-1. **Obektlarni topadi** - Qaysi obektlarni (beanlarni) yaratish kerakligini aniqlaydi
-2. **Obektlarni yaratadi** - Topilgan obektlarni yaratadi
-3. **Obektlarni ulaydi** - Bir obektga ikkinchi obekt kerak bolsa, ularni ulaydi
-
-```
-@SpringBootApplication -> Spring skanerlaydi
-        |
-        v
-@Service, @Repository, @Component -> Topilgan belgilar (annotations)
-        |
-        v
-IoC Container -> Obektlarni yaratadi va saglaydi
-        |
-        v
-@Autowired -> Obektlarni kerakli joyga ulaydi
-```
+Siz faqat `@Service` yozdingiz. Qolganini Spring qildi.
 
 ## IoC Container ichida nima bor?
 
-IoC Container - bu oddiy HashMap (Kalit -> Qiymat) dan iborat.
-
-- **Kalit** -> bean nomi (masalan: "userService")
-- **Qiymat** -> obektning oz (masalan: UserService obekti)
+IoC Container — Springning "ombori". Soddalashtirilgan holda — bu katta `HashMap`:
 
 ```java
-// Springning IoC Containeri taxminan shunday ishlaydi
+// Spring IoC Container taxminan shunday ishlaydi
 public class SimpleIoCContainer {
-    private Map<String, Object> beans = new HashMap<>();
-    
-    public void registerBean(String name, Object bean) {
+    private final Map<String, Object> beans = new HashMap<>();
+
+    public void register(String name, Object bean) {
         beans.put(name, bean);
     }
-    
-    public Object getBean(String name) {
+
+    public Object get(String name) {
         return beans.get(name);
     }
 }
 ```
 
-## Xulosa
+Kalit — bean nomi (`"userService"`), qiymat — yaratilgan obyekt.
 
-IoC Container = Springning ombori. Siz unga "menga UserService kerak" deysiz, u sizga tayyor obektni beradi. Qanday yaratilgani, qachon yaratilgani sizni qiziqtirmaydi. Spring hammasini ozi qiladi.
+## Uch bosqich
+
+Spring ishga tushganda IoC Container uchta bosqichni bajaradi:
+
+**Birinchi bosqich: Skanerlash.** Spring `@Component`, `@Service`, `@Repository`, `@Controller` bilan belgilangan barcha klasslarni topadi.
+
+**Ikkinchi bosqich: Yaratish.** Topilgan klasslardan obyekt yasaydi.
+
+**Uchinchi bosqich: Ulash.** Har bir obyektga unga kerakli boshqa obyektlarni beradi (Dependency Injection).
+
+```
+@SpringBootApplication ishga tushadi
+         |
+         v
+Komponentlar skanerlanadi
+         |
+         v
+IoC Container obyektlarni yaratadi
+         |
+         v
+@Autowired orqali ulaydi
+```
+
+## Kod misolida ko'rish
+
+```java
+@Configuration
+public class AppConfig {
+
+    @Bean
+    public UserRepository userRepository() {
+        return new UserRepository();
+    }
+
+    @Bean
+    public UserService userService() {
+        // Spring userRepository() ni IoC Containerdan topib beradi
+        return new UserService(userRepository());
+    }
+}
+```
+
+Spring Boot da annotatsiyalar bilan qisqaroq:
+
+```java
+@Repository
+public class UserRepository { ... }
+
+@Service
+public class UserService {
+    public UserService(UserRepository repository) { ... }
+}
+```
+
+Spring Boot o'zi skanerlaydi, o'zi yaratadi, o'zi ulaydi.
+
+## ApplicationContext — IoC Containerning asosiy interfeysi
+
+```java
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        ApplicationContext context = SpringApplication.run(Application.class, args);
+
+        // Containerdan to'g'ridan-to'g'ri olish (nadir hollarda kerak)
+        UserService service = context.getBean(UserService.class);
+    }
+}
+```
+
+Odatda siz `context.getBean()` chaqirmaysiz — `@Autowired` yoki konstruktor injection orqali Spring o'zi beradi.

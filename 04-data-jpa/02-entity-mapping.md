@@ -1,221 +1,221 @@
-# Entity Mapping - @Entity, @Table, @Column
+# Entity Mapping — @Entity, @Table, @Column
 
-## @Entity - Klassni jadvalga aylantirish
+Entity — Java klassini ma'lumotlar bazasi jadvaliga bog'laydigan mexanizm. Har bir Entity dastur ishlaganda jadval sifatida namoyon bo'ladi.
 
-@Entity Springga "bu klass malumotlar bazasidagi jadvalga togri keladi" deb aytadi.
-
-```java
-@Entity  // Spring: "Bu klass jadvalga aylanadi"
-public class User {
-    @Id
-    private Long id;
-    private String name;
-    private String email;
-}
-```
-
-Bu Springga: "users jadvali yarat, unda id, name, email ustunlari bolsin" degani.
-
-## @Table - Jadval nomini ozgartirish
-
-Default: klass nomi = jadval nomi (`User` -> `user`)
+## @Entity va @Table
 
 ```java
-@Entity
-@Table(name = "users")  // Jadval nomi "users" (avtomatik emas)
-public class User {
-    ...
-}
-
-// Yoki
-@Entity
-@Table(name = "app_users", schema = "public")  // Schema ham bersa boladi
+@Entity                          // Bu klass DB jadvaliga to'g'ri keladi
+@Table(name = "users")           // Jadval nomi (default: klass nomi kichik harfda)
 public class User {
     ...
 }
 ```
 
-## @Id - Primary key
+Agar `@Table` bo'lmasa, Hibernate klass nomidan jadval nomini chiqaradi: `User` → `user`, `OrderItem` → `order_item`.
 
-Har bir Entity da @Id bolishi shart:
+## @Id va ID generatsiyasi
+
+Har bir Entity'da birlamchi kalit (`@Id`) bo'lishi shart:
 
 ```java
 @Entity
 public class User {
-    @Id  // Bu primary key
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    // IDENTITY — PostgreSQL, MySQL da SERIAL/AUTO_INCREMENT
     private Long id;
 }
 ```
 
-### ID yaratish strategiyalari
+Boshqa generatsiya strategiyalari:
 
 ```java
-@Entity
-public class User {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)  // DB auto-increment
-    private Long id;
-}
-
-// Yoki
+// SEQUENCE — PostgreSQL sekvens orqali (ishonchli va tez)
 @Id
-@GeneratedValue(strategy = GenerationType.SEQUENCE)  // Sequence orqali
-@SequenceGenerator(name = "user_seq", sequenceName = "user_sequence", allocationSize = 1)
+@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "user_seq")
+@SequenceGenerator(name = "user_seq", sequenceName = "user_id_seq", allocationSize = 50)
 private Long id;
 
-// Yoki
+// UUID — tarqatilgan tizimlar uchun
 @Id
-@GeneratedValue(strategy = GenerationType.UUID)  // UUID (Hibernate 6+)
-private String id;
+@GeneratedValue(strategy = GenerationType.UUID)
+private UUID id;
+
+// MANUAL — qiymatni o'zingiz berasiz
+@Id
+private String id;  // Masalan: "USR-2024-001"
 ```
 
-## @Column - Ustunni sozlash
+## @Column — ustun sozlamalari
 
 ```java
 @Entity
 @Table(name = "users")
 public class User {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(name = "full_name", nullable = false, length = 100)
     private String name;
-    
-    @Column(unique = true, nullable = false)  // email unique bolishi kerak
+
+    @Column(unique = true, nullable = false, length = 255)
     private String email;
-    
-    @Column(name = "user_age")  // Jadvalda "user_age" deb nomlanadi
-    private Integer age;
-    
-    @Column(updatable = false)  // Bir marta yoziladi, ozgartirib bolmaydi
+
+    @Column(name = "password_hash", nullable = false)
+    private String password;
+
+    @Column(name = "phone_number", length = 20)
+    private String phone;                           // nullable = true (default)
+
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;                  // Default qiymat
+
+    @Column(name = "created_at", updatable = false) // Bir marta yoziladi
     private LocalDateTime createdAt;
-    
-    @Column(columnDefinition = "TEXT")  // TEXT tipida boladi
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Column(columnDefinition = "TEXT")              // Uzun matn uchun
     private String bio;
 }
 ```
 
-## @Enumerated - Enum ni saqlash
+## @Enumerated
 
 ```java
-public enum Role {
+public enum UserRole {
     USER, ADMIN, MODERATOR
 }
 
 @Entity
 public class User {
-    @Enumerated(EnumType.STRING)  // "USER", "ADMIN" deb saqlanadi
-    // @Enumerated(EnumType.ORDINAL) // 0, 1, 2 deb saqlanadi (tavsiya etilmaydi)
-    private Role role;
+    @Enumerated(EnumType.STRING)   // "USER", "ADMIN" deb saqlanadi
+    // @Enumerated(EnumType.ORDINAL) — 0, 1, 2 (xavfli — enum o'zgarsa buziladi)
+    private UserRole role;
 }
 ```
 
-## @Temporal - Sana va vaqt
+Har doim `EnumType.STRING` ishlating. `ORDINAL` — enum tartibiga bog'liq, bironta enum qo'shilsa yoki o'chirilsa ma'lumot buziladi.
+
+## Sana va vaqt
+
+Spring Boot 3.x va Jakarta EE 3+ da `LocalDateTime`, `LocalDate`, `Instant` to'g'ridan-to'g'ri mapplanadi:
 
 ```java
 @Entity
 public class User {
-    @Temporal(TemporalType.DATE)       // Faqat sana (2026-05-15)
-    private LocalDate birthDate;
-    
-    @Temporal(TemporalType.TIME)       // Faqat vaqt (14:30:00)
-    private LocalTime appointmentTime;
-    
-    @Temporal(TemporalType.TIMESTAMP)  // Sana va vaqt (2026-05-15 14:30:00)
-    private LocalDateTime createdAt;
+    private LocalDate birthDate;           // Faqat sana
+    private LocalTime appointmentTime;     // Faqat vaqt
+    private LocalDateTime createdAt;       // Sana + vaqt
+    private Instant lastLoginAt;           // UTC timestamp (tavsiya etiladi)
+    private ZonedDateTime eventAt;         // Timezone bilan
 }
 ```
 
-## @Transient - Saqlanmaydigan maydon
+`@Temporal` — eski JPA 2.x annotatsiyasi, `java.util.Date` uchun kerak edi. Java 8 vaqt tiplarida shart emas.
+
+## @Transient — saqlanmaydigan maydon
 
 ```java
 @Entity
 public class User {
     private String firstName;
     private String lastName;
-    
-    @Transient  // Bu maydon jadvalda saqlanmaydi!
-    public String getFullName() {
-        return firstName + " " + lastName;
+
+    @Transient  // DB'ga saqlanmaydi, faqat memory'da
+    private String fullName;
+
+    @PostLoad  // DB'dan yuklanganda ishlaydi
+    public void computeFullName() {
+        this.fullName = firstName + " " + lastName;
     }
 }
 ```
 
-## To'liq misol
+## @PrePersist va @PreUpdate
+
+Saqlash va yangilashdan oldin avtomatik ishlaydigan metodlar:
 
 ```java
 @Entity
-@Table(name = "users")
 public class User {
-    
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    
-    @Column(nullable = false, length = 100)
-    private String name;
-    
-    @Column(unique = true, nullable = false)
-    private String email;
-    
-    @Column(nullable = false)
-    private String password;
-    
-    @Column(name = "phone_number")
-    private String phoneNumber;
-    
-    @Column(name = "is_active")
-    private boolean isActive;
-    
-    @Enumerated(EnumType.STRING)
-    private Role role;
-    
-    @Column(name = "created_at", updatable = false)
-    @Temporal(TemporalType.TIMESTAMP)
+    @Column(updatable = false)
     private LocalDateTime createdAt;
-    
-    @Column(name = "updated_at")
-    @Temporal(TemporalType.TIMESTAMP)
+
     private LocalDateTime updatedAt;
-    
-    @PrePersist  // Saqlashdan oldin avtomatik ishlaydi
-    public void prePersist() {
+
+    @PrePersist  // Birinchi saqlashdan oldin
+    protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
-    
-    @PreUpdate  // Yangilashdan oldin avtomatik ishlaydi
-    public void preUpdate() {
+
+    @PreUpdate   // Har bir yangilashdan oldin
+    protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
-    
-    // getter va setter lar
 }
 ```
 
-## DDL avtomatik yaratish
+Muqobil: `@EntityListeners(AuditingEntityListener.class)` + Spring Data Auditing.
 
-application.properties da:
+## To'liq Entity namunasi
 
-```properties
-spring.jpa.hibernate.ddl-auto=update
-# create -> har safar jadvalni ochirib, qayta yaratadi
-# update -> mayjud jadvalni yangilaydi (yangi ustun qoshadi)
-# validate -> jadvalni tekshiradi, hech narsa ozgartirmaydi
-# none -> hech narsa qilmaydi (production)
+```java
+@Entity
+@Table(
+    name = "users",
+    indexes = {
+        @Index(name = "idx_users_email", columnList = "email"),
+        @Index(name = "idx_users_created_at", columnList = "created_at")
+    },
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_users_email", columnNames = "email")
+    }
+)
+public class User {
 
-spring.jpa.show-sql=true  # SQL ni konsolga chiqaradi
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, length = 100)
+    private String name;
+
+    @Column(unique = true, nullable = false, length = 255)
+    private String email;
+
+    @Column(nullable = false)
+    private String password;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserRole role = UserRole.USER;
+
+    @Column(nullable = false)
+    private boolean active = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    // getter'lar
+}
 ```
-
-## Xulosa
-
-- @Entity -> klassni jadvalga aylantiradi
-- @Table -> jadval nomini ozgartirish
-- @Id -> primary key
-- @Column -> ustun sozlamalari
-- @Transient -> saqlanmaydigan maydon
-- @Enumerated -> enum ni saqlash
-- @Temporal -> sana va vaqt
-- @PrePersist, @PreUpdate -> avtomatik ishlaydigan metodlar

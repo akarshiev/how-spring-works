@@ -1,141 +1,144 @@
-# Controller Layer - @RestController va @RequestMapping
+# Controller Layer — @RestController va @RequestMapping
 
-## Controller nima?
+Controller — HTTP so'rovlarni qabul qilib, javob qaytaradigan klass. MVC arxitekturasining "C" qismi.
 
-Controller - bu HTTP so'rovlarni qabul qiluvchi klass. U Springga "agar /users ga GET kelsa, buni qil" deb aytadi.
-
-## @RestController vs @Controller
+## @RestController va @Controller farqi
 
 ```java
-// Eski usul - har safar @ResponseBody yozish kerak
+// @Controller — HTML sahifalar uchun (Thymeleaf, JSP)
 @Controller
-public class OldController {
-    @GetMapping("/hello")
-    @ResponseBody  // Bunisiz HTML qaytaradi
-    public String sayHello() {
-        return "Hello";
+public class HtmlController {
+    @GetMapping("/home")
+    public String home(Model model) {
+        model.addAttribute("user", currentUser);
+        return "home";  // home.html shablonini qaytaradi
     }
 }
 
-// Yangi usul - @RestController = @Controller + @ResponseBody
-@RestController  // @ResponseBody oz-ozidan qoshiladi
-public class NewController {
-    @GetMapping("/hello")
-    public String sayHello() {
-        return "Hello";  // JSON yoki matn qaytaradi
+// @RestController — REST API uchun (@Controller + @ResponseBody)
+@RestController
+public class ApiController {
+    @GetMapping("/api/users")
+    public List<User> getUsers() {
+        return userService.findAll();  // Java ob'ektini JSON ga aylantiradi
     }
 }
 ```
 
-**Qachon nima ishlatish kerak?**
+`@RestController` = `@Controller` + `@ResponseBody`. Bu degani, har bir metod qaytargan qiymat avtomatik JSON (yoki XML)ga serialise qilinadi.
 
-- @RestController -> REST API (JSON qaytarish uchun)
-- @Controller -> HTML sahifalar qaytarish uchun (Thymeleaf, JSP)
-
-## @RequestMapping qanday ishlaydi?
-
-@RequestMapping URL ni metodga bog'laydi.
+## @RequestMapping — URL ni metodga bog'lash
 
 ```java
 @RestController
-@RequestMapping("/api/users")  // Barcha metodlar "/api/users" bilan boshlanadi
+@RequestMapping("/api/v1/users")  // Barcha metodlar shu bilan boshlanadi
 public class UserController {
-    
-    @GetMapping          // GET /api/users
-    public List<User> getAll() { }
-    
-    @GetMapping("/{id}") // GET /api/users/5
-    public User getById(@PathVariable Long id) { }
-    
-    @PostMapping         // POST /api/users
-    public User create(@RequestBody User user) { }
-    
-    @PutMapping("/{id}") // PUT /api/users/5
-    public User update(@PathVariable Long id, @RequestBody User user) { }
-    
-    @DeleteMapping("/{id}") // DELETE /api/users/5
-    public void delete(@PathVariable Long id) { }
+
+    @GetMapping            // GET /api/v1/users
+    @GetMapping("/{id}")   // GET /api/v1/users/5
+    @PostMapping           // POST /api/v1/users
+    @PutMapping("/{id}")   // PUT /api/v1/users/5
+    @DeleteMapping("/{id}") // DELETE /api/v1/users/5
 }
 ```
 
-## @PathVariable - URL dan qiymat olish
+## Ma'lumotlarni so'rovdan olish
+
+### @PathVariable — URL'dan
 
 ```java
 @GetMapping("/users/{userId}/orders/{orderId}")
 public Order getOrder(
-    @PathVariable Long userId,     // URL dan userId ni oladi
-    @PathVariable Long orderId     // URL dan orderId ni oladi
+    @PathVariable Long userId,
+    @PathVariable Long orderId
 ) {
     return orderService.findById(userId, orderId);
 }
+// GET /users/5/orders/10 -> userId=5, orderId=10
 ```
 
-So'rov: GET /users/5/orders/10
-- userId = 5
-- orderId = 10
-
-## @RequestParam - Query parametrlarini olish
+### @RequestParam — Query parametrdan
 
 ```java
 @GetMapping("/users")
-public List<User> getUsers(
-    @RequestParam(defaultValue = "0") int page,     // ?page=0
-    @RequestParam(defaultValue = "10") int size,     // ?size=10
-    @RequestParam(required = false) String search   // ?search=john (ixtiyoriy)
+public Page<UserResponse> getUsers(
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size,
+    @RequestParam(required = false) String search,
+    @RequestParam(defaultValue = "name,asc") String sort
 ) {
-    return userService.findAll(page, size, search);
+    return userService.findAll(page, size, search, sort);
 }
+// GET /users?page=0&size=10&search=ali
 ```
 
-So'rov: GET /users?page=0&size=10&search=john
-
-## @RequestHeader - Header dan qiymat olish
+### @RequestBody — JSON body'dan
 
 ```java
-@GetMapping("/users")
-public List<User> getUsers(
-    @RequestHeader("Authorization") String token,  // Headerdan token ni oladi
-    @RequestHeader("Accept-Language") String lang   // Tilni oladi
+@PostMapping("/users")
+public ResponseEntity<UserResponse> createUser(
+    @Valid @RequestBody CreateUserRequest request
 ) {
-    return userService.findAll(token, lang);
+    UserResponse saved = userService.create(request);
+    return ResponseEntity.status(201).body(saved);
 }
 ```
 
-## To'liq controller misol
+### @RequestHeader — Headerdan
+
+```java
+@GetMapping("/users/me")
+public UserResponse getCurrentUser(
+    @RequestHeader("Authorization") String authHeader,
+    @RequestHeader(value = "Accept-Language", defaultValue = "uz") String lang
+) {
+    // authHeader = "Bearer eyJhbGci..."
+    return userService.getCurrentUser(authHeader, lang);
+}
+```
+
+## To'liq controller namunasi
 
 ```java
 @RestController
-@RequestMapping("/api/v1/users")  // Versiya bilan
+@RequestMapping("/api/v1/users")
 public class UserController {
-    
+
     private final UserService userService;
-    
+
     public UserController(UserService userService) {
         this.userService = userService;
     }
-    
+
     @GetMapping
-    public ResponseEntity<List<User>> getAllUsers(
+    public ResponseEntity<Page<UserResponse>> getAllUsers(
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size
     ) {
-        List<User> users = userService.findAll(page, size);
-        return ResponseEntity.ok(users);
+        return ResponseEntity.ok(userService.findAll(page, size));
     }
-    
+
     @GetMapping("/{id}")
-    public ResponseEntity<User> getUserById(@PathVariable Long id) {
-        return userService.findById(id)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.findById(id));
+        // userService.findById xato tashlasa — @ControllerAdvice ushlaydi
     }
-    
+
     @PostMapping
-    public ResponseEntity<User> createUser(@RequestBody User user) {
-        User saved = userService.save(user);
-        return ResponseEntity.status(201).body(saved);
+    public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
+        UserResponse saved = userService.create(request);
+        URI location = URI.create("/api/v1/users/" + saved.getId());
+        return ResponseEntity.created(location).body(saved);
     }
-    
+
+    @PutMapping("/{id}")
+    public ResponseEntity<UserResponse> updateUser(
+        @PathVariable Long id,
+        @Valid @RequestBody UpdateUserRequest request
+    ) {
+        return ResponseEntity.ok(userService.update(id, request));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         userService.delete(id);
@@ -144,10 +147,34 @@ public class UserController {
 }
 ```
 
-## Xulosa
+## Controller qoidalari
 
-- @RestController -> JSON qaytaradi
-- @RequestMapping -> URL ni metodga bog'laydi
-- @PathVariable -> URL dan olish
-- @RequestParam -> query parametrdan olish
-- @RequestHeader -> headerdan olish
+Controller faqat so'rovni qabul qiladi va javob qaytaradi — business logic **yo'q**. Business logic `Service` qatlamida:
+
+```java
+// Yaxshi — Controller yupqa
+@PostMapping("/users")
+public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
+    return ResponseEntity.status(201).body(userService.create(request));
+}
+
+// Yomon — Controller'da business logic
+@PostMapping("/users")
+public ResponseEntity<UserResponse> createUser(@RequestBody CreateUserRequest request) {
+    if (userRepository.existsByEmail(request.getEmail())) {
+        throw new RuntimeException("Email already exists");
+    }
+    User user = new User();
+    user.setEmail(request.getEmail());
+    // ... (bularning hammasi Service'da bo'lishi kerak)
+    return ResponseEntity.status(201).body(userRepository.save(user));
+}
+```
+
+API versiyalash ham controller darajasida hal qilinadi:
+
+```java
+@RequestMapping("/api/v1/users")  // Versiya URL'da
+// yoki
+@RequestMapping(value = "/api/users", headers = "API-Version=1")  // Headerda
+```

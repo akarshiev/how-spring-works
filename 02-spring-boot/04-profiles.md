@@ -1,35 +1,29 @@
-# Profiles - Turli muhitlar uchun sozlamalar
+# Profiles — Turli muhitlar uchun sozlamalar
 
-## Profile nima?
+Ilova development, test va production muhitlarida har xil sozlamalar bilan ishlashi kerak. Development'da debug log va local DB, production'da minimal log va real DB.
 
-Profile - bu ilovaning turli muhitlarda (development, production, test) turlicha ishlashini taminlash.
+Profile — aynan shu farqni boshqarish mexanizmi.
 
-## Real hayot misoli
+## Profile fayllari
 
-Uyda va ishda turlicha kiyinasiz:
+`application-{profil_nomi}.properties` nomli fayllar yaratiladi:
 
-- **Uyda (dev)** -> shim, futbolka, uy shippak
-- **Ishda (prod)** -> kostyum, galstuk, tufli
-
-Ilova ham shunday:
-
-- **Development** -> localhost database, debug log, hamma narsa ochiq
-- **Production** -> real database, minimal log, xavfsizlik kuchli
-
-## Profile yaratish
-
-application-{profile}.properties nomli fayllar yaratamiz:
-
-### Asosiy fayl (application.properties):
-
-```properties
-server.port=8080
-spring.application.name=my-app
+```
+src/main/resources/
+  application.properties           <- umumiy, har doim o'qiladi
+  application-dev.properties       <- development uchun
+  application-prod.properties      <- production uchun
+  application-test.properties      <- testlar uchun
 ```
 
-### Development profili (application-dev.properties):
+```properties
+# application.properties (umumiy)
+spring.application.name=my-app
+server.port=8080
+```
 
 ```properties
+# application-dev.properties
 spring.datasource.url=jdbc:postgresql://localhost:5432/dev_db
 spring.datasource.username=postgres
 spring.datasource.password=123
@@ -37,157 +31,125 @@ spring.jpa.show-sql=true
 logging.level.com.example=DEBUG
 ```
 
-### Production profili (application-prod.properties):
-
 ```properties
-spring.datasource.url=jdbc:postgresql://production-db:5432/prod_db
+# application-prod.properties
+spring.datasource.url=jdbc:postgresql://prod-server:5432/prod_db
 spring.datasource.username=prod_user
-spring.datasource.password=${DB_PASSWORD}  # environment variable
+spring.datasource.password=${DB_PASSWORD}
 spring.jpa.show-sql=false
 logging.level.com.example=WARN
-server.port=80
 ```
 
-## Profilni qanday ishga tushirish?
+## Profilni faollashtirish
 
-### 1-usul: application.properties da
+To'rt xil usul:
 
 ```properties
+# 1. application.properties orqali (development uchun qulay)
 spring.profiles.active=dev
 ```
 
-### 2-usul: Terminalda
-
 ```bash
-java -jar my-app.jar --spring.profiles.active=prod
-```
+# 2. Terminalda (production uchun)
+java -jar app.jar --spring.profiles.active=prod
 
-### 3-usul: Environment variable
-
-```bash
+# 3. Environment variable (Docker, CI/CD uchun)
 export SPRING_PROFILES_ACTIVE=prod
-java -jar my-app.jar
+java -jar app.jar
 ```
 
-### 4-usul: IDE da
-
-IntelliJ IDEA -> Run Configuration -> VM Options:
 ```
--Dspring.profiles.active=dev
+# 4. IDE'da (IntelliJ IDEA Run Configuration)
+VM options: -Dspring.profiles.active=dev
 ```
 
-## @Profile - Kodni profilga bog'lash
+## @Profile — kodni profilga bog'lash
+
+Bir interfeys, ikki implementatsiya: development'da soxta, production'da haqiqiy:
 
 ```java
+public interface EmailService {
+    void send(String to, String subject, String body);
+}
+
 @Service
-@Profile("dev")  // Faqat development rejimida ishlaydi
-public class DevEmailService implements EmailService {
+@Profile("dev")  // Faqat development'da aktiv
+public class ConsoleEmailService implements EmailService {
     @Override
-    public void sendEmail(String to, String message) {
-        System.out.println("Dev: Email yuborildi -> " + to + " : " + message);
-        // Aslida email yuborilmaydi, faqat konsolga chiqariladi
+    public void send(String to, String subject, String body) {
+        System.out.println("Dev: Email -> " + to + ": " + subject);
+        // Haqiqiy email yuborilmaydi
+    }
+}
+
+@Service
+@Profile("prod")  // Faqat production'da aktiv
+public class SmtpEmailService implements EmailService {
+    @Override
+    public void send(String to, String subject, String body) {
+        // Haqiqiy SMTP orqali yuborish
+        javaMailSender.send(...);
     }
 }
 ```
 
-```java
-@Service
-@Profile("prod")  // Faqat production rejimida ishlaydi
-public class ProdEmailService implements EmailService {
-    @Override
-    public void sendEmail(String to, String message) {
-        // Haqiqiy email yuborish
-        JavaMailSender.send(to, message);
-    }
-}
+Spring aktiv profilga qarab qaysi implementatsiyani inject qilishni tanlaydi.
+
+## YAML'da barcha profil bitta faylda
+
+`---` ajratgichi bilan barcha profillar bitta `application.yml`'da yozilishi mumkin:
+
+```yaml
+spring:
+  application:
+    name: my-app
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:postgresql://localhost:5432/dev_db
+    username: postgres
+    password: "123"
+  jpa:
+    show-sql: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: jdbc:postgresql://prod-server:5432/prod_db
+    username: prod_user
+    password: ${DB_PASSWORD}
 ```
 
-## Profillarni birlashtirish
-
-```properties
-# application.properties
-spring.profiles.active=dev,postgres
-```
-
-Bir nechta profil bir vaqtda ishlashi mumkin:
-
-```java
-@Component
-@Profile("dev & postgres")  // Ikkala profil ham aktiv bolsa
-public class DevPostgresService {
-}
-```
-
-## Default profile
-
-Agar hech qanday profil aktiv bolmasa, "default" profili ishlaydi.
-
-```java
-@Component
-@Profile("default")  // Faqat hech qanday profil tanlanmagan bolsa
-public class DefaultService {
-}
-```
-
-## Kod orqali profilni tekshirish
+## Profil'ni kod ichida tekshirish
 
 ```java
 @Component
 public class ProfileChecker {
+
     @Autowired
     private Environment env;
-    
+
     @PostConstruct
     public void check() {
-        String[] profiles = env.getActiveProfiles();
-        System.out.println("Aktiv profillar: " + Arrays.toString(profiles));
-        
-        if (env.acceptsProfiles("dev")) {
-            System.out.println("Development rejimi");
-        }
-        
-        if (env.acceptsProfiles("prod")) {
+        String[] activeProfiles = env.getActiveProfiles();
+        System.out.println("Aktiv profillar: " + Arrays.toString(activeProfiles));
+
+        if (env.acceptsProfiles(Profiles.of("prod"))) {
             System.out.println("Production rejimi");
         }
     }
 }
 ```
 
-## Qachon profile ishlatish kerak?
+## Qoidalar
 
-```yaml
-# application.yml - bitta faylda hamma profillar
-spring:
-  application:
-    name: my-app
+`spring.profiles.active=dev`'ni `application.properties`'ga yozing, lekin bu qiymatni Git'ga push qiling. Production'da bu qiymat environment variable orqali qayta yoziladi.
 
----
-# development
-spring:
-  config:
-    activate:
-      on-profile: dev
-  datasource:
-    url: jdbc:h2:mem:testdb
-    username: sa
-    password:
-
----
-# production
-spring:
-  config:
-    activate:
-      on-profile: prod
-  datasource:
-    url: jdbc:postgresql://prod-db:5432/proddb
-    username: ${DB_USER}
-    password: ${DB_PASS}
-```
-
-## Xulosa
-
-- Profile = ilovaning turli muhitlardagi holati
-- Fayl nomi: `application-{profile}.properties`
-- Aktivlashtirish: `spring.profiles.active=dev`
-- Kodda @Profile bilan ajratish mumkin
-- Eng kop ishlatiladigan: dev, test, prod
+Profillar soni kamroq bo'lishi yaxshiroq: `dev`, `test`, `prod` — ko'pchilik loyiha uchun yetarli. `staging`, `qa`, `uat` kabi ko'p profil boshqarishni qiyinlashtiradi.

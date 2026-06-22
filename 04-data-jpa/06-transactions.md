@@ -1,230 +1,202 @@
-# @Transactional - Tranzaksiyalar
+# @Transactional — Tranzaksiyalar
 
-## Tranzaksiya nima?
+Tranzaksiya — bir nechta ma'lumotlar bazasi operatsiyasini bir butun sifatida bajarish. Hammasi muvaffaqiyatli bo'lsa — saqlanadi (COMMIT). Biror joyda xato bo'lsa — barchasi bekor qilinadi (ROLLBACK).
 
-Tranzaksiya = bir nechta operatsiyani bir butun qilib birlashtirish.
+## Nima uchun kerak?
 
-Real hayotda:
-
-Pul otkazmasini tasavvur qiling:
+Pul o'tkazmasini tasavvur qiling:
 
 ```
-Ali -> 100$ -> Vali
+Ali hisobidan 100$ ayirish  →  (1-operatsiya)
+Vali hisobiga 100$ qo'shish →  (2-operatsiya)
 ```
 
-Bu ikki qadamdan iborat:
+Agar birinchi operatsiya bajarildi, ikkinchisida xato chiqdi — Ali pulsiz, Vali pulsiz. Tranzaksiya bundan saqlayd:
 
-1. Alining hisobidan 100$ ayrilsin
-2. Valining hisobiga 100$ qoshilsin
-
-Agar 1-qadam boldi, 2-qadamda xatolik chiqsa, Ali pulsiz qoladi. Tranzaksiya bu muammoni yechadi.
-
-Tranzaksiya bilan:
-
-```
+```sql
 BEGIN;
-  1. Alidan 100$ ayir
-  2. Valiga 100$ qosh
-COMMIT;  // Agar hammasi yaxshi bolsa
-
-YOKI
-
-ROLLBACK; // Agar xatolik chiqsa, hammasi avvalgi holatga qaytadi
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;  -- Ali
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;  -- Vali
+COMMIT;  -- Hammasi yaxshi
+-- yoki
+ROLLBACK;  -- Xato bo'lsa, hammasi avvalgi holatga
 ```
 
-## @Transactional qanday ishlaydi?
+## @Transactional
 
 ```java
 @Service
 public class PaymentService {
-    
-    @Transactional  // Bu metod ichidagi hammasi bir tranzaksiya
-    public void transferMoney(Long fromId, Long toId, BigDecimal amount) {
-        Account from = accountRepository.findById(fromId).orElseThrow();
-        Account to = accountRepository.findById(toId).orElseThrow();
-        
+
+    @Transactional  // Metod transaksiya ichida bajariladi
+    public void transfer(Long fromId, Long toId, BigDecimal amount) {
+        Account from = accountRepository.findById(fromId)
+            .orElseThrow(() -> new AccountNotFoundException(fromId));
+        Account to = accountRepository.findById(toId)
+            .orElseThrow(() -> new AccountNotFoundException(toId));
+
+        if (from.getBalance().compareTo(amount) < 0) {
+            throw new InsufficientFundsException("Balans yetarli emas");
+        }
+
         from.setBalance(from.getBalance().subtract(amount));
-        accountRepository.save(from);
-        
-        // AGAR BU YERDA XATOLIK CHIQSA -> from qaytib o'zgaradi
-        // (ROLLBACK boladi)
-        
         to.setBalance(to.getBalance().add(amount));
+
+        accountRepository.save(from);
         accountRepository.save(to);
-        
-        // Hammasi yaxshi -> COMMIT (haqiqiy saqlash)
+        // Xato yo'q → COMMIT. Xato chiqsa → ROLLBACK (ikkala saqlash ham bekor)
     }
 }
 ```
 
-## @Transactional qoshilganda nima boladi?
+Spring AOP orqali ishlaydi: `@Transactional` ko'rsa, metod atrofiga `BEGIN/COMMIT/ROLLBACK` qo'shadi.
 
-Spring AOP orqali ishlaydi:
+## @Transactional(readOnly = true)
 
-```java
-// Siz yozasiz:
-@Service
-public class PaymentService {
-    @Transactional
-    public void transferMoney(Long fromId, Long toId, BigDecimal amount) {
-        // kod
-    }
-}
-
-// Spring avtomatik wrapp qiladi:
-// 1. beginTransaction()
-// 2. transferMoney() ni chaqiradi
-// 3. Agar xatolik bolsa -> rollback()
-//    Agar xatolik bolmasa -> commit()
-```
-
-## @Transactional parametrlari
+Faqat o'qish uchun transaksiyalar tezroq ishlaydi — Hibernate dirty checking qilmaydi:
 
 ```java
 @Service
+@Transactional(readOnly = true)  // Klass darajasida — default
 public class UserService {
-    
-    // Faqat oqish uchun (tezroq ishlaydi)
-    @Transactional(readOnly = true)
-    public User findById(Long id) {
-        return repository.findById(id).orElseThrow();
-    }
-    
-    // Xatolik vaqtida rollback
-    @Transactional(rollbackFor = Exception.class)  // Hamma xatolikda rollback
-    @Transactional(noRollbackFor = IllegalArgumentException.class)  // Bu xatolikda rollback qilma
-    public void createUser(User user) {
-        repository.save(user);
-    }
-    
-    // Timeout - 5 sekunddan oshsa xatolik
-    @Transactional(timeout = 5)
-    public void longOperation() {
-        // 5 sekunddan oshsa, TransactionTimedOutException
-    }
+
+    public UserResponse findById(Long id) { ... }  // readOnly = true
+    public Page<UserResponse> findAll(Pageable p) { ... }  // readOnly = true
+
+    @Transactional  // O'zgartirish uchun alohida belgilash (readOnly = false)
+    public UserResponse create(CreateUserRequest req) { ... }
+
+    @Transactional
+    public UserResponse update(Long id, UpdateUserRequest req) { ... }
 }
 ```
 
-## Isolation level - Izolyatsiya
+## rollbackFor — qaysi xatolikda bekor qilish
 
-Bir vaqtning ozida ikki foydalanuvchi bir malumotga ishlov bersa nima boladi?
+Default: `RuntimeException` va `Error` da ROLLBACK, `Exception` da emas.
 
 ```java
-@Transactional(isolation = Isolation.READ_COMMITTED)  // PostgreSQL default
-public void updateBalance(Long accountId, BigDecimal amount) {
-    // ...
-}
+// Checked exception da ham ROLLBACK
+@Transactional(rollbackFor = Exception.class)
+public void processPayment() throws IOException { ... }
+
+// Muayyan xatolikda ROLLBACK qilmaslik
+@Transactional(noRollbackFor = BusinessWarningException.class)
+public void processOrder() { ... }
 ```
 
-| Isolation | Dirty Read | Non-repeatable Read | Phantom Read |
-|-----------|-----------|-------------------|-------------|
-| READ_UNCOMMITTED | Ha | Ha | Ha |
-| READ_COMMITTED | Yoq | Ha | Ha |
-| REPEATABLE_READ | Yoq | Yoq | Ha |
-| SERIALIZABLE | Yoq | Yoq | Yoq |
+## Propagation — transaksiyalar o'rtasidagi muloqot
 
-**READ_COMMITTED -> eng kop ishlatiladigan (PostgreSQL default)**
-
-## Propagation - Tranzaksiya tarqalishi
-
-Bir @Transactional metod ikkinchi @Transactional metodni chaqirsa:
+Bir `@Transactional` metod boshqasini chaqirganda nima bo'ladi?
 
 ```java
 @Service
 public class OrderService {
-    
+
     @Transactional
     public void createOrder(Order order) {
-        // ...
-        paymentService.processPayment(order);  // Bu metod ham @Transactional
-        // ...
+        orderRepository.save(order);
+        auditService.log("Order created");  // AuditService ham @Transactional
     }
 }
 ```
 
-| Propagation | Nima qiladi? |
-|-------------|-------------|
-| REQUIRED (default) | Mavjud tranzaksiya ishlatiladi, yoq bolsa yangisi yaratiladi |
-| REQUIRES_NEW | Har doim yangi tranzaksiya |
-| NESTED | Agar mavjud bolsa, ichki tranzaksiya |
-| NEVER | Tranzaksiya bolmasligi kerak |
-| NOT_SUPPORTED | Tranzaksiya bolmasligi kerak, mavjud bolsa to'xtatiladi |
-| MANDATORY | Tranzaksiya mavjud bolishi kerak |
-| SUPPORTS | Tranzaksiya mavjud bolsa ishlatiladi, bolmasa ham ishlaydi |
+Propagation turlari:
+
+```java
+// REQUIRED (default) — mavjud transaksiyaga qo'shiladi
+@Transactional(propagation = Propagation.REQUIRED)
+
+// REQUIRES_NEW — har doim yangi transaksiya (mustaqil)
+@Transactional(propagation = Propagation.REQUIRES_NEW)
+// OrderService rollback bo'lsa ham, AuditService yozadi
+
+// SUPPORTS — transaksiya bo'lsa qo'shiladi, bo'lmasa transaksiyasiz
+@Transactional(propagation = Propagation.SUPPORTS)
+
+// NOT_SUPPORTED — transaksiyasiz ishlaydi (mavjudni to'xtatadi)
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
+
+// MANDATORY — transaksiya bo'lishi shart (bo'lmasa xato)
+@Transactional(propagation = Propagation.MANDATORY)
+
+// NEVER — transaksiya bo'lmasligi shart (bo'lsa xato)
+@Transactional(propagation = Propagation.NEVER)
+```
+
+Audit log uchun `REQUIRES_NEW` — asosiy transaksiya rollback bo'lsa ham, audit saqlanishi kerak:
 
 ```java
 @Service
 public class AuditService {
-    
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    // Har doim YANGI tranzaksiya
-    // Asosiy tranzaksiya rollback bolsa ham, audit log saqlanadi
-    public void log(String action, String details) {
-        auditRepository.save(new AuditLog(action, details));
+    public void log(String action) {
+        auditRepository.save(new AuditLog(action, LocalDateTime.now()));
     }
 }
 ```
 
-## @Transactional cheklovlari
+## Isolation — parallel transaksiyalar
+
+Bir vaqtda ikkita transaksiya bir ma'lumotni o'qib/yozsa:
+
+```java
+@Transactional(isolation = Isolation.READ_COMMITTED)  // PostgreSQL default
+public void processPayment() { ... }
+```
+
+| Isolation | Dirty Read | Non-repeatable Read | Phantom Read |
+|-----------|-----------|---------------------|--------------|
+| READ_UNCOMMITTED | Ha | Ha | Ha |
+| READ_COMMITTED | Yo'q | Ha | Ha |
+| REPEATABLE_READ | Yo'q | Yo'q | Ha |
+| SERIALIZABLE | Yo'q | Yo'q | Yo'q |
+
+Ko'pchilik holat uchun `READ_COMMITTED` (PostgreSQL default) yetarli.
+
+## Cheklovlar
 
 ```java
 @Service
 public class UserService {
-    
-    // 1. XATOLIK! private metodda ishlamaydi
+
+    // XATO 1: private metodda ishlamaydi — AOP proxy faqat public metodlarda
     @Transactional
-    private void saveUser(User user) {
-        // AOP proxy faqat public metodlarda ishlaydi
-    }
-    
-    // 2. XATOLIK! Bir klass ichida chaqirilsa ishlamaydi
+    private void saveUser(User user) { ... }
+
+    // XATO 2: shu klass ichidan chaqirish ishlamaydi — proxy chetlab o'tiladi
     public void doSomething() {
-        saveUser(new User());  // @Transactional ishlamaydi!
+        this.createUser(...);  // @Transactional ishlamaydi!
     }
-    
+
     @Transactional
-    public void saveUser(User user) {
-        repository.save(user);
-    }
+    public void createUser(CreateUserRequest req) { ... }
 }
 ```
 
-## Optimistic va Pessimistic Lock
+Ichki chaqirish muammosiga yechim: Service'ni ikkita bo'limga ajratish yoki `ApplicationContext.getBean()` orqali o'zini olish (yaxshi emas) yoki `@TransactionalEventListener` ishlatish.
 
-### Optimistic Lock
+## @Version — Optimistic Lock
+
+Bir vaqtda ikkita transaksiya bir Entity'ni yangilasa:
 
 ```java
 @Entity
 public class Account {
-    @Version  // Avtomatik boshqariladigan versiya raqami
+
+    @Id
+    private Long id;
+
+    @Version  // Hibernate avtomatik boshqaradi
     private Long version;
-    
+
     private BigDecimal balance;
 }
 
-// Bir vaqtning o'zida 2 foydalanuvchi balance ni o'zgartirmoqchi
-// -> OptimisticLockException
+// Tranzaksiya 1: version=1, balance=100 → balance=50 saqlaydi, version=2
+// Tranzaksiya 2: version=1, balance=100 → saqlashga harakat → VERSION NOTO'G'RI!
+// → OptimisticLockException — klient qayta urinishi kerak
 ```
 
-### Pessimistic Lock
-
-```java
-@Repository
-public interface AccountRepository extends JpaRepository<Account, Long> {
-    
-    @Lock(LockModeType.PESSIMISTIC_WRITE)  // Jadvalni blokirovka qiladi
-    @Query("SELECT a FROM Account a WHERE a.id = :id")
-    Optional<Account> findByIdForUpdate(@Param("id") Long id);
-}
-```
-
-## Xulosa
-
-- @Transactional -> bir nechta operatsiyani bir butun qiladi
-- Muvaffaqiyat -> COMMIT
-- Xatolik -> ROLLBACK (hammasi avvalgi holatga qaytadi)
-- readOnly = true -> oqish uchun (tezroq)
-- rollbackFor -> qaysi xatolikda rollback qilishni belgilaydi
-- Isolation -> bir vaqtda kirishni boshqarish
-- Propagation -> tranzaksiyalar orasidagi muloqot
-- @Version -> optimistic lock
+Bank, elektron savdo kabi parallelligi yuqori tizimlarda muhim.

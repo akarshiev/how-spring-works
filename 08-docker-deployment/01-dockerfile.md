@@ -1,106 +1,187 @@
-# Dockerfile - Spring Boot app uchun
+# Dockerfile — Spring Boot app uchun
 
-## Docker nima?
+Docker — ilovangizni konteyner ichiga joylab, istalgan muhitda bir xil ishlatish imkonini beradi. "Menda ishlaydi lekin serverda ishlamaydi" muammosi yo'qoladi.
 
-Docker = ilovangizni konteyner ichiga joylab, istalgan joyda ishlatish.
+## Nima uchun Docker?
 
-Tasavvur qiling: siz ilovani yozdingiz. Bu ilova ishlashi uchun Java, PostgreSQL, va boshqa narsalar kerak.
-
-Docker bilan:
+Spring Boot ilovasi ishga tushishi uchun Java kerak. Serverni topasiz, Java o'rnatasiz, versiyalar mos keladi deb umid qilasiz. Docker bilan bu muammo yo'q — Java va ilova birgalikda "qutida" bo'ladi:
 
 ```bash
-# 1 marta build
 docker build -t my-app .
-
-# Istalgan serverda ishga tushirish
 docker run -p 8080:8080 my-app
+# Istalgan serverda. Java o'rnatishsiz.
 ```
 
-## Dockerfile
+## Multi-stage Dockerfile
+
+Spring Boot uchun eng yaxshi yondashuv — ikki bosqichli build:
 
 ```dockerfile
-# 1-bosqich: Build (Maven)
-FROM maven:3.9-eclipse-temurin-17-alpine AS build
+# =========================
+# 1-BOSQICH: Build
+# =========================
+FROM eclipse-temurin:21-jdk-alpine AS build
 
 WORKDIR /app
 
-# pom.xml ni kopiyalash va dependency larni yuklab olish
+# Dependency'larni alohida yuklash (layer cache uchun)
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+COPY .mvn .mvn
+COPY mvnw .
+RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
 
-# Manba kodini kopiyalash
+# Manba kodi
 COPY src ./src
 
-# Ilovani build qilish
-RUN mvn package -DskipTests -B
+# Build (test o'tkazib yuborish)
+RUN ./mvnw package -DskipTests -B
 
-# 2-bosqich: Runtime (faqat Java)
-FROM eclipse-temurin:17-jre-alpine AS runtime
+# =========================
+# 2-BOSQICH: Runtime
+# =========================
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
+# Xavfsizlik: root bo'lmagan foydalanuvchi
+RUN addgroup -S spring && adduser -S spring -G spring
 
 WORKDIR /app
 
-# Build bosqichidan jar faylni olish
+# Faqat jar faylni ko'chirish (Maven, JDK yo'q — kichik image)
 COPY --from=build /app/target/*.jar app.jar
 
-# 8080 portni ochish
+# Foydalanuvchini o'zgartirish
+USER spring:spring
+
+# Port
 EXPOSE 8080
 
-# Ilovani ishga tushirish
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Ilova ishga tushirish — JVM sozlamalari bilan
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-jar", "app.jar"]
 ```
 
-## Multi-stage build
+Nima uchun ikki bosqich? Build bosqichida Maven + JDK + ko'p narsalar bor — 500MB+. Runtime bosqichida faqat JRE + jar — 150-200MB.
 
-Dockerfile yuqorida 2 bosqichdan iborat:
+## Layer caching
 
-1. **Build stage** - Maven bilan ilovani build qilish
-2. **Runtime stage** - faqat Java va jar fayl
+Dockerfile'da muhim tartib: kam o'zgaruvchi qatorlar yuqorida, ko'p o'zgaruvchi pastda:
 
-Bu nima uchun kerak? Build stage da Maven, JDK va boshqa narsalar bor (katta hajm). Runtime stage da faqat JRE va jar fayl bor (kichik hajm).
+```dockerfile
+# YAXSHI — dependency'lar alohida qatlam (kamdan-kam o'zgaradi)
+COPY pom.xml .
+RUN ./mvnw dependency:go-offline  # Bu kesh — pom.xml o'zgarmasa qayta yuklanmaydi
 
-```
-Build stage: 500 MB (Maven + JDK + kod)
-Runtime stage: 100 MB (faqat JRE + jar)
+COPY src ./src                    # Bu ko'p o'zgaradi
+RUN ./mvnw package                # Har marta qayta build
+
+# YOMON — hamma narsani birgalikda (kesh ishlamaydi)
+COPY . .
+RUN ./mvnw package
 ```
 
 ## .dockerignore
 
 ```dockerignore
-# .dockerignore - Docker build ga keraksiz fayllarni yubormaslik
+# .dockerignore — Docker build kontekstiga yubormaslik
 target/
 .git/
+.github/
 .idea/
-*.md
+*.iml
+.mvn/wrapper/maven-wrapper.jar
+**/*.md
 .gitignore
+docker-compose*.yml
 ```
 
-## Docker image yaratish va ishga tushirish
+## Qurilish va ishga tushirish
 
 ```bash
 # Image yaratish
-docker build -t my-spring-app:1.0 .
+docker build -t my-spring-app:1.0.0 .
 
-# Container ni ishga tushirish
-docker run -p 8080:8080 --name my-app my-spring-app:1.0
+# Ishga tushirish
+docker run \
+  -p 8080:8080 \
+  -e DB_URL=jdbc:postgresql://host:5432/mydb \
+  -e DB_PASSWORD=secret \
+  --name my-app \
+  my-spring-app:1.0.0
 
-# Backgroundda ishga tushirish
-docker run -d -p 8080:8080 --name my-app my-spring-app:1.0
+# Background'da
+docker run -d -p 8080:8080 --name my-app my-spring-app:1.0.0
 
-# Loglarni korish
+# Loglarni ko'rish
 docker logs -f my-app
 
-# Container ni to'xtatish
-docker stop my-app
+# To'xtatish va o'chirish
+docker stop my-app && docker rm my-app
 
-# Container ni ochirish
-docker rm my-app
+# Image hajmini ko'rish
+docker images my-spring-app
 ```
 
-## Xulosa
+## JVM sozlamalari konteyner uchun
 
-- Dockerfile -> ilovani konteynerga joylash qoidalari
-- Multi-stage build -> kichik hajmli image
-- Build stage -> Maven bilan build
-- Runtime stage -> faqat JRE + jar
-- docker build -> image yaratish
-- docker run -> container ni ishga tushirish
+```dockerfile
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-XX:InitialRAMPercentage=50.0", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "app.jar"]
+```
+
+`-XX:+UseContainerSupport` — JVM konteynerning haqiqiy xotira limitini ko'radi (eski Java'da muammo bo'lardi). `-XX:MaxRAMPercentage=75.0` — konteyner xotirasining 75% ishlatilsin.
+
+## Gradle bilan
+
+```dockerfile
+FROM eclipse-temurin:21-jdk-alpine AS build
+WORKDIR /app
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle.kts settings.gradle.kts ./
+RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
+COPY src ./src
+RUN ./gradlew bootJar --no-daemon
+
+FROM eclipse-temurin:21-jre-alpine AS runtime
+RUN addgroup -S spring && adduser -S spring -G spring
+WORKDIR /app
+COPY --from=build /app/build/libs/*.jar app.jar
+USER spring:spring
+EXPOSE 8080
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+```
+
+## Spring Boot Layered Jar (muqobil yondashuv)
+
+Spring Boot 2.3+ da jar qatlamlarini ajratish:
+
+```dockerfile
+FROM eclipse-temurin:21-jdk-alpine AS build
+WORKDIR /app
+COPY . .
+RUN ./mvnw package -DskipTests
+
+FROM eclipse-temurin:21-jre-alpine AS runtime
+WORKDIR /app
+ARG JAR_FILE=target/*.jar
+COPY --from=build /app/${JAR_FILE} app.jar
+
+# Jar'ni qatlamlarga ajratish
+RUN java -Djarmode=layertools -jar app.jar extract
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=runtime /app/dependencies/ ./
+COPY --from=runtime /app/spring-boot-loader/ ./
+COPY --from=runtime /app/snapshot-dependencies/ ./
+COPY --from=runtime /app/application/ ./
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
+```
+
+Bu yondashuv katta ilovalar uchun rebuild vaqtini qisqartiradi — faqat o'zgargan qatlam rebuild qilinadi.

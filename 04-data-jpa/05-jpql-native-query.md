@@ -2,216 +2,185 @@
 
 ## JPQL nima?
 
-JPQL = Java Persistence Query Language. Bu JPA ning o'z query tili.
+JPQL (Jakarta Persistence Query Language) — JPA'ning o'z so'rov tili. SQL'ga o'xshaydi, lekin jadval va ustun nomlari o'rniga Entity va maydon nomlari ishlatiladi.
 
-**JPQL vs SQL:**
+```
+SQL:   SELECT * FROM users WHERE email = 'ali@example.com'
+JPQL:  SELECT u FROM User u WHERE u.email = 'ali@example.com'
+         ↑            ↑
+    Java ob'ekti   Java klassi nomi
+```
 
-- **SQL** -> jadval va ustun nomlari bilan ishlaydi: `SELECT * FROM users`
-- **JPQL** -> Entity va field nomlari bilan ishlaydi: `SELECT u FROM User u`
+Nima uchun JPQL? Ma'lumotlar bazasidan mustaqil — PostgreSQL'dan MySQL'ga o'tsangiz JPQL o'zgarmaydi.
 
-## JPQL sintaksisi
-
-### Oddiy SELECT
+## JPQL asosiy sintaksis
 
 ```java
 public interface UserRepository extends JpaRepository<User, Long> {
-    
-    // JPQL: SELECT * FROM users WHERE email = ?
-    @Query("SELECT u FROM User u WHERE u.email = :email")
-    Optional<User> findByEmail(@Param("email") String email);
-    
-    // Hamma active userlar
-    @Query("SELECT u FROM User u WHERE u.isActive = true")
-    List<User> findAllActiveUsers();
-    
-    // Ma'lum fieldlarni olish
-    @Query("SELECT u.name, u.email FROM User u")
-    List<Object[]> findNamesAndEmails();
+
+    // Barcha aktiv foydalanuvchilar
+    @Query("SELECT u FROM User u WHERE u.active = true")
+    List<User> findAllActive();
+
+    // Parametr bilan — nomli (:name)
+    @Query("SELECT u FROM User u WHERE u.name = :name AND u.age > :age")
+    List<User> findByNameAndMinAge(@Param("name") String name, @Param("age") int age);
+
+    // Parametr bilan — indeksli (?1)
+    @Query("SELECT u FROM User u WHERE u.email = ?1")
+    Optional<User> findByEmailPositional(String email);
+
+    // LIKE
+    @Query("SELECT u FROM User u WHERE LOWER(u.name) LIKE LOWER(CONCAT('%', :keyword, '%'))")
+    List<User> searchByName(@Param("keyword") String keyword);
+
+    // COUNT
+    @Query("SELECT COUNT(u) FROM User u WHERE u.active = true")
+    long countActive();
+
+    // Aggregatsiya
+    @Query("SELECT AVG(u.age) FROM User u WHERE u.active = true")
+    Double averageAgeOfActiveUsers();
 }
 ```
 
-### Parametrlar
+## JOIN FETCH — N+1 muammosini yechish
 
 ```java
-// 1-usul: nomli parametr (tavsiya etiladi)
-@Query("SELECT u FROM User u WHERE u.name = :name AND u.age = :age")
-List<User> findByNameAndAge(@Param("name") String name, @Param("age") int age);
+// MUAMMO: N+1 — orders alohida yuklanadi
+@Query("SELECT u FROM User u WHERE u.active = true")
+List<User> findActive();  // users SELECT + N ta orders SELECT
 
-// 2-usul: indeks parametr
-@Query("SELECT u FROM User u WHERE u.name = ?1 AND u.age = ?2")
-List<User> findByNameAndAge(String name, int age);
-```
+// YECHIM: JOIN FETCH — bitta so'rovda
+@Query("SELECT DISTINCT u FROM User u LEFT JOIN FETCH u.orders WHERE u.active = true")
+List<User> findActiveWithOrders();  // Bitta SELECT
 
-### LIKE
-
-```java
-@Query("SELECT u FROM User u WHERE u.name LIKE %:keyword%")
-List<User> searchByName(@Param("keyword") String keyword);
-
-@Query("SELECT u FROM User u WHERE u.email LIKE :domain%")
-List<User> findByEmailDomain(@Param("domain") String domain);
-```
-
-### JOIN
-
-```java
-// INNER JOIN
-@Query("SELECT u FROM User u JOIN u.orders o WHERE o.amount > :minAmount")
-List<User> findUsersWithExpensiveOrders(@Param("minAmount") BigDecimal amount);
-
-// LEFT JOIN
-@Query("SELECT u FROM User u LEFT JOIN u.orders o WHERE o.id IS NULL")
-List<User> findUsersWithoutOrders();
-
-// JOIN FETCH (N+1 muammosini yechadi)
-@Query("SELECT u FROM User u JOIN FETCH u.orders WHERE u.id = :id")
-Optional<User> findByIdWithOrders(@Param("id") Long id);
-```
-
-### Aggregatsiya
-
-```java
-@Query("SELECT COUNT(u) FROM User u WHERE u.isActive = true")
-long countActiveUsers();
-
-@Query("SELECT AVG(u.age) FROM User u")
-double averageAge();
-
+// Ichki ob'ektlar bilan
 @Query("""
-    SELECT u.name, COUNT(o.id) as orderCount
+    SELECT DISTINCT u FROM User u
+    LEFT JOIN FETCH u.orders o
+    LEFT JOIN FETCH o.items
+    WHERE u.id = :id
+    """)
+Optional<User> findByIdWithOrdersAndItems(@Param("id") Long id);
+```
+
+## JPQL bilan aggregatsiya va guruhlash
+
+```java
+@Query("""
+    SELECT u.name, COUNT(o.id), SUM(o.amount)
     FROM User u
     LEFT JOIN u.orders o
-    GROUP BY u.name
-    ORDER BY orderCount DESC
+    WHERE u.active = true
+    GROUP BY u.id, u.name
+    HAVING COUNT(o.id) >= :minOrders
+    ORDER BY SUM(o.amount) DESC
     """)
-List<Object[]> findUserOrderCounts();
+List<Object[]> findTopCustomers(@Param("minOrders") long minOrders);
 ```
 
-## Native SQL - Haqiqiy SQL
-
-Native SQL da jadval nomlarini ishlatasiz, Entity nomlarini emas.
+`Object[]` bilan ishlash noqulay. DTO Projection yaxshiroq:
 
 ```java
-public interface UserRepository extends JpaRepository<User, Long> {
-    
-    @Query(value = "SELECT * FROM users WHERE email = :email", nativeQuery = true)
-    Optional<User> findByEmailNative(@Param("email") String email);
-    
-    // Murakkab query
-    @Query(value = """
-        SELECT u.*, COUNT(o.id) as total_orders
-        FROM users u
-        LEFT JOIN orders o ON u.id = o.user_id
-        WHERE u.is_active = true
-        GROUP BY u.id
-        HAVING COUNT(o.id) > 5
-        ORDER BY total_orders DESC
-        LIMIT 10
-        """, nativeQuery = true)
-    List<User> findTopUsersByOrderCount();
-}
+public record CustomerStats(String name, Long orderCount, BigDecimal totalAmount) {}
+
+@Query("""
+    SELECT new com.example.dto.CustomerStats(u.name, COUNT(o.id), SUM(o.amount))
+    FROM User u LEFT JOIN u.orders o
+    GROUP BY u.id, u.name
+    HAVING COUNT(o.id) >= :minOrders
+    """)
+List<CustomerStats> findTopCustomerStats(@Param("minOrders") long minOrders);
 ```
 
-**Qachon native SQL ishlatish kerak?**
+## Native SQL — haqiqiy SQL
 
-- DB ga xos funksiyalar kerak bolsa (PostgreSQL -> JSONB, full-text search)
-- Murakkab SQL optimizatsiyasi kerak bolsa
-- Eski SQL ko'nikmalaringizni ishlatmoqchi bolsangiz
-
-**Qachon JPQL ishlatish kerak?**
-
-- Database mustaqil bolishi kerak bolsa (PostgreSQL dan MySQL ga otish mumkin)
-- Entity nomlari bilan ishlash qulay bolsa
-- O'qish uchun tushunarliroq bolsa
-
-## Criteria API - Kod orqali query
-
-Dinamik query lar uchun (filterlar ozgarib turadigan joylarda):
+Native SQL'da jadval va ustun nomlari ishlatiladi:
 
 ```java
-@Service
-public class UserService {
-    @Autowired
-    private EntityManager entityManager;
-    
-    public List<User> searchUsers(String name, Integer minAge, Boolean active) {
-        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
-        CriteriaQuery<User> query = cb.createQuery(User.class);
-        Root<User> root = query.from(User.class);
-        
-        List<Predicate> predicates = new ArrayList<>();
-        
-        if (name != null) {
-            predicates.add(cb.like(root.get("name"), "%" + name + "%"));
-        }
-        if (minAge != null) {
-            predicates.add(cb.greaterThan(root.get("age"), minAge));
-        }
-        if (active != null) {
-            predicates.add(cb.equal(root.get("isActive"), active));
-        }
-        
-        query.where(predicates.toArray(new Predicate[0]));
-        query.orderBy(cb.asc(root.get("name")));
-        
-        return entityManager.createQuery(query).getResultList();
-    }
-}
+// Oddiy native query
+@Query(value = "SELECT * FROM users WHERE email = :email", nativeQuery = true)
+Optional<User> findByEmailNative(@Param("email") String email);
+
+// PostgreSQL'ga xos funksiyalar
+@Query(value = """
+    SELECT *
+    FROM users
+    WHERE to_tsvector('english', name || ' ' || email) @@ plainto_tsquery(:query)
+    """, nativeQuery = true)
+List<User> fullTextSearch(@Param("query") String query);
+
+// Murakkab JOIN
+@Query(value = """
+    SELECT u.*, COUNT(o.id) AS order_count
+    FROM users u
+    LEFT JOIN orders o ON u.id = o.user_id
+    WHERE u.is_active = true
+    GROUP BY u.id
+    HAVING COUNT(o.id) > :minOrders
+    ORDER BY order_count DESC
+    LIMIT :limit
+    """, nativeQuery = true)
+List<Object[]> findTopUsers(@Param("minOrders") int minOrders, @Param("limit") int limit);
 ```
 
-## Projection - Faqat kerakli fieldlarni olish
+Native SQL'da pagination:
 
 ```java
-// DTO Projection
-public interface UserSummary {
-    String getName();
-    String getEmail();
-}
-
-public interface UserRepository extends JpaRepository<User, Long> {
-    // Faqat name va email qaytaradi
-    List<UserSummary> findAllProjectedBy();
-    
-    @Query("SELECT u.name AS name, u.email AS email FROM User u WHERE u.isActive = true")
-    List<UserSummary> findActiveUserSummaries();
-}
-```
-
-## @NamedQuery - Query ga nom berish
-
-```java
-@Entity
-@NamedQuery(
-    name = "User.findByEmail",
-    query = "SELECT u FROM User u WHERE u.email = :email"
+@Query(
+    value = "SELECT * FROM users WHERE active = true",
+    countQuery = "SELECT COUNT(*) FROM users WHERE active = true",
+    nativeQuery = true
 )
-public class User {
-    ...
-}
+Page<User> findAllActiveNative(Pageable pageable);
 ```
 
-Ishlatish:
+`countQuery` shart — Spring sahifalash uchun jami sonni bilishi kerak.
+
+## Qachon nima ishlatish kerak?
+
+**Query metodlari (metod nomi orqali)** — oddiy filtr va qidiruv uchun. `findByEmailAndActive`, `findTop10ByOrderByCreatedAtDesc`.
+
+**JPQL** — murakkab filtrlar, JOIN'lar, aggregatsiya. Ma'lumotlar bazasidan mustaqil bo'lishi kerak bo'lganda.
+
+**Native SQL** — DB'ga xos funksiyalar (`JSONB`, `tsvector`, `ARRAY`), juda murakkab optimizatsiya kerak bo'lganda, yoki mavjud SQL'ni ko'chirganingizda.
+
+## Criteria API — dinamik query
+
+Foydalanuvchi tanlaydigan filtrlar uchun (qidiruv formasi kabi):
 
 ```java
 @Repository
-public class UserRepositoryImpl {
+public class UserSearchRepository {
+
     @PersistenceContext
     private EntityManager em;
-    
-    public Optional<User> findByEmail(String email) {
-        return em.createNamedQuery("User.findByEmail", User.class)
-            .setParameter("email", email)
-            .getResultStream()
-            .findFirst();
+
+    public List<User> search(String name, Integer minAge, Boolean active) {
+        CriteriaBuilder cb = em.getCriteriaBuilder();
+        CriteriaQuery<User> query = cb.createQuery(User.class);
+        Root<User> root = query.from(User.class);
+
+        List<Predicate> predicates = new ArrayList<>();
+
+        if (name != null && !name.isBlank()) {
+            predicates.add(cb.like(cb.lower(root.get("name")),
+                                   "%" + name.toLowerCase() + "%"));
+        }
+        if (minAge != null) {
+            predicates.add(cb.greaterThanOrEqualTo(root.get("age"), minAge));
+        }
+        if (active != null) {
+            predicates.add(cb.equal(root.get("active"), active));
+        }
+
+        query.where(predicates.toArray(new Predicate[0]));
+        query.orderBy(cb.desc(root.get("createdAt")));
+
+        return em.createQuery(query).getResultList();
     }
 }
 ```
 
-## Xulosa
-
-- JPQL -> Entity va field nomlari bilan ishlaydi
-- Native SQL -> jadval va ustun nomlari bilan ishlaydi
-- JOIN FETCH -> N+1 muammosini yechadi
-- Criteria API -> dinamik query lar
-- Projection -> faqat kerakli fieldlar
-- JPQL odatda yaxshiroq (database mustaqil), native SQL faqat maxsus holatlarda
+**Spring Data JPA Specification** — Criteria API'ni yanada qulaylashtiradi. Katta loyihalarda Criteria API o'rniga `JpaSpecificationExecutor` ishlating.

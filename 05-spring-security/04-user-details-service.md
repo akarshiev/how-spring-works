@@ -1,25 +1,22 @@
 # UserDetails va UserDetailsService
 
-## UserDetails nima?
+Spring Security o'z foydalanuvchi modeliga ega — `UserDetails`. Sizning `User` Entity'ngiz Spring Security bilan ishlashi uchun bu interfeysi implement qilishi yoki adapter yaratish kerak.
 
-UserDetails - Spring Security ning foydalanuvchi haqidagi interfeysi. Spring Security ozining foydalanuvchi modelini ishlatadi.
+## UserDetails interfeysi
 
 ```java
-// Spring Security ning interfeysi
-public interface UserDetails {
-    String getUsername();           // Foydalanuvchi nomi
-    String getPassword();           // Parol (shifrlangan)
-    Collection<? extends GrantedAuthority> getAuthorities();  // Rollar
-    boolean isAccountNonExpired();  // Hisob muddati tugamaganmi?
-    boolean isAccountNonLocked();   // Hisob bloklanmaganmi?
-    boolean isCredentialsNonExpired(); // Parol muddati tugamaganmi?
-    boolean isEnabled();            // Hisob aktivmi?
+public interface UserDetails extends Serializable {
+    String getUsername();
+    String getPassword();
+    Collection<? extends GrantedAuthority> getAuthorities();  // Rollar/huquqlar
+    boolean isAccountNonExpired();     // Hisob muddati o'tmaganmi?
+    boolean isAccountNonLocked();      // Hisob bloklangan emas?
+    boolean isCredentialsNonExpired(); // Parol muddati o'tmaganmi?
+    boolean isEnabled();               // Hisob faolmi?
 }
 ```
 
-## UserDetailsService nima?
-
-UserDetailsService - foydalanuvchini malumotlar bazasidan qidiradigan interfeys.
+## UserDetailsService interfeysi
 
 ```java
 public interface UserDetailsService {
@@ -27,107 +24,148 @@ public interface UserDetailsService {
 }
 ```
 
-## Implementatsiya qilish
+Spring Security autentifikatsiya vaqtida `loadUserByUsername()` chaqiradi.
 
-### 1-qadam: User entity ga UserDetails ni implement qilish
+## 1-yondashuv: Entity UserDetails'ni implement qiladi
 
 ```java
 @Entity
 @Table(name = "users")
 public class User implements UserDetails {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(unique = true, nullable = false)
     private String username;
-    
+
     @Column(nullable = false)
     private String password;
-    
+
     @Enumerated(EnumType.STRING)
-    private Role role;
-    
+    @Column(nullable = false, length = 20)
+    private UserRole role;
+
+    @Column(nullable = false)
     private boolean enabled = true;
-    
+
+    @Column(nullable = false)
+    private boolean accountLocked = false;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        // Rollarni GrantedAuthority ga aylantirish
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
-    
-    @Override
-    public boolean isAccountNonExpired() { return true; }
-    
-    @Override
-    public boolean isAccountNonLocked() { return true; }
-    
-    @Override
-    public boolean isCredentialsNonExpired() { return true; }
-    
-    @Override
-    public boolean isEnabled() { return enabled; }
-    
-    // getter va setter lar
-}
 
-public enum Role {
-    USER,
-    ADMIN
+    @Override public String getUsername() { return username; }
+    @Override public String getPassword() { return password; }
+    @Override public boolean isEnabled() { return enabled; }
+    @Override public boolean isAccountNonLocked() { return !accountLocked; }
+    @Override public boolean isAccountNonExpired() { return true; }
+    @Override public boolean isCredentialsNonExpired() { return true; }
 }
 ```
 
-### 2-qadam: UserDetailsService yaratish
+## 2-yondashuv: Alohida adapter (tavsiya etiladi)
+
+Entity va Spring Security'ni ajratish — clean architecture:
+
+```java
+// Entity — faqat DB
+@Entity
+public class User {
+    private Long id;
+    private String username;
+    private String password;
+    private String role;
+    private boolean active;
+    // + getter/setter
+}
+
+// Adapter — Spring Security uchun
+public class UserPrincipal implements UserDetails {
+
+    private final User user;
+
+    public UserPrincipal(User user) {
+        this.user = user;
+    }
+
+    @Override
+    public String getUsername() { return user.getUsername(); }
+
+    @Override
+    public String getPassword() { return user.getPassword(); }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole()));
+    }
+
+    @Override public boolean isEnabled() { return user.isActive(); }
+    @Override public boolean isAccountNonExpired() { return true; }
+    @Override public boolean isAccountNonLocked() { return true; }
+    @Override public boolean isCredentialsNonExpired() { return true; }
+
+    // Entity'ga kirish uchun
+    public User getUser() { return user; }
+    public Long getId() { return user.getId(); }
+}
+```
+
+## UserDetailsService implementatsiyasi
 
 ```java
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
-    
+
     private final UserRepository userRepository;
-    
+
     public CustomUserDetailsService(UserRepository userRepository) {
         this.userRepository = userRepository;
     }
-    
+
     @Override
-    public UserDetails loadUserByUsername(String username) 
-        throws UsernameNotFoundException {
-        
-        return userRepository.findByUsername(username)
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User user = userRepository.findByUsername(username)
             .orElseThrow(() -> new UsernameNotFoundException(
-                "User topilmadi: " + username
+                "Foydalanuvchi topilmadi: " + username
             ));
+
+        return new UserPrincipal(user);
+        // yoki: return user;  (agar User implements UserDetails bo'lsa)
     }
 }
 ```
 
-### 3-qadam: SecurityConfig ga qoshish
+## SecurityConfig'da ulash
 
 ```java
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-    
-    private final UserDetailsService userDetailsService;
-    
-    public SecurityConfig(UserDetailsService userDetailsService) {
-        this.userDetailsService = userDetailsService;
-    }
-    
+
+    private final CustomUserDetailsService userDetailsService;
+    private final JwtAuthenticationFilter jwtFilter;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
+        return http
+            .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login", "/register").permitAll()
+                .requestMatchers("/api/auth/**").permitAll()
                 .anyRequest().authenticated()
             )
-            .formLogin(Customizer.withDefaults())
-            .userDetailsService(userDetailsService);  // UserDetailsService ni sozlash
-        
-        return http.build();
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
+            .authenticationProvider(authenticationProvider())
+            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+            .build();
     }
-    
+
     @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
@@ -135,77 +173,60 @@ public class SecurityConfig {
         provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
-    
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
+        throws Exception {
+        return config.getAuthenticationManager();
+    }
 }
 ```
 
-## Entity ni UserDetails dan ajratish (yaxshiroq usul)
+## Hozirgi foydalanuvchiga kirish
 
 ```java
-// Entity - malumotlar bazasi uchun
+// Controller'da
+@GetMapping("/me")
+public ResponseEntity<UserResponse> getCurrentUser(
+    @AuthenticationPrincipal UserPrincipal principal
+) {
+    return ResponseEntity.ok(userService.findById(principal.getId()));
+}
+
+// Service'da (SecurityContextHolder orqali)
+public User getCurrentUser() {
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
+    return principal.getUser();
+}
+```
+
+## Ko'p rollar
+
+```java
+// Enum
+public enum UserRole {
+    USER, ADMIN, MODERATOR
+}
+
+// Ko'p rol uchun — Set<UserRole>
 @Entity
 public class User {
-    @Id
-    private Long id;
-    private String username;
-    private String password;
-    private String role;
-    private boolean enabled;
+    @ElementCollection(fetch = FetchType.EAGER)
+    @Enumerated(EnumType.STRING)
+    private Set<UserRole> roles = new HashSet<>();
 }
 
-// Alohida UserDetails implementatsiyasi
-public class SecurityUser implements UserDetails {
-    private final User user;
-    
-    public SecurityUser(User user) {
-        this.user = user;
-    }
-    
-    @Override
-    public String getUsername() { return user.getUsername(); }
-    
-    @Override
-    public String getPassword() { return user.getPassword(); }
-    
-    @Override
-    public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole()));
-    }
-    
-    @Override
-    public boolean isEnabled() { return user.isEnabled(); }
+// UserDetails'da
+@Override
+public Collection<? extends GrantedAuthority> getAuthorities() {
+    return user.getRoles().stream()
+        .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
+        .collect(Collectors.toList());
 }
 ```
-
-## Oson usul - UserDetails bilan yaratish
-
-```java
-@Service
-public class UserService {
-    
-    public UserDetails createUser(String username, String password, String role) {
-        // UserDetails ning oddiy implementatsiyasi
-        return User.builder()
-            .username(username)
-            .password(passwordEncoder.encode(password))
-            .roles(role)
-            .accountExpired(false)
-            .accountLocked(false)
-            .credentialsExpired(false)
-            .disabled(false)
-            .build();
-    }
-}
-```
-
-## Xulosa
-
-- UserDetails -> Spring Security ning foydalanuvchi modeli
-- UserDetailsService -> foydalanuvchi qidiradigan service
-- DaoAuthenticationProvider -> UserDetailsService ni ishlatadi
-- PasswordEncoder -> parollarni shifrlash
-- Entity ga UserDetails ni implement qilish yoki alohida klass yaratish mumkin

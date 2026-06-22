@@ -1,31 +1,15 @@
 # PostgreSQL asosiy tushunchalar
 
-## PostgreSQL nima?
+PostgreSQL — eng kuchli ochiq kodli relatsion ma'lumotlar bazasi. Spring Boot loyihalarida eng ko'p ishlatiladi.
 
-PostgreSQL - bu eng kuchli ochiq kodli malumotlar bazasi.
+## Ma'lumotlar bazasi nima?
 
-Oddiy qilib: PostgreSQL = malumotlarni saglaydigan va ularni qidirishga yordam beradigan dastur.
-
-## Malumotlar bazasi nima?
-
-Tasavvur qiling, sizda 1000 ta foydalanuvchi haqida malumot bor:
-
-- Ism, email, telefon, manzil, yosh, ...
-
-Bu malumotlarni Excelda saqlash mumkin, lekin:
-
-- 1 million foydalanuvchi bolsa, Excel ochilmaydi
-- Bir vaqtning ozida 100 kishi kirsa, Excel buziladi
-- Malumotlarni qidirish sekin ishlaydi
-
-Malumotlar bazasi aynan shu muammolarni yechadi.
+Ma'lumotlarni tartibli, tez qidiriladigan va bir vaqtda ko'p foydalanuvchi bilan ishlay oladigan tizimda saqlash. Fayl yoki Excel bilan ishlash katta ma'lumotlar uchun ishlamaydi.
 
 ## Jadval (Table)
 
-Malumotlar jadvallarda saqlanadi:
-
 ```
-users (jadval)
+users jadvali
 +----+-------+---------------------+-----+
 | id | name  | email               | age |
 +----+-------+---------------------+-----+
@@ -33,87 +17,126 @@ users (jadval)
 | 2  | Vali  | vali@example.com    | 30  |
 | 3  | Guli  | guli@example.com    | 22  |
 +----+-------+---------------------+-----+
- |         |                      |      |
- id       name                   email  age
-(ustun)   (ustun)                (ustun) (ustun)
+
+Jadval = tartibli ma'lumot to'plami
+Ustun (Column) = ma'lumot turi: id, name, email, age
+Qator (Row) = bitta yozuv
 ```
 
-- **Jadval** -> users (foydalanuvchilar)
-- **Ustun (Column)** -> id, name, email, age
-- **Qator (Row)** -> bitta foydalanuvchi
-
-## PostgreSQL da jadval yaratish
+## Jadval yaratish
 
 ```sql
 CREATE TABLE users (
-    id BIGSERIAL PRIMARY KEY,       -- Avtomatik o'sadigan ID
-    name VARCHAR(100) NOT NULL,     -- Ism (bosh bolmasligi kerak)
-    email VARCHAR(255) UNIQUE,      -- Email (takrorlanmasligi kerak)
-    age INTEGER CHECK (age > 0),    -- Yosh (0 dan katta)
-    created_at TIMESTAMP DEFAULT NOW()  -- Yaratilgan vaqt
+    id          BIGSERIAL PRIMARY KEY,         -- Avtomatik o'sadigan ID
+    name        VARCHAR(100) NOT NULL,          -- 100 belgigacha, majburiy
+    email       VARCHAR(255) NOT NULL UNIQUE,   -- Takrorlanmasin, majburiy
+    age         INTEGER CHECK (age >= 18),      -- 18 dan kichik bo'lmasin
+    is_active   BOOLEAN NOT NULL DEFAULT true,  -- Default qiymat
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()  -- Vaqt + timezone
 );
 ```
 
-## CRUD - Asosiy operatsiyalar
+`BIGSERIAL` — PostgreSQL'ga xos, avtomatik ID generatsiya. `TIMESTAMPTZ` — timezone bilan vaqt (oddiy `TIMESTAMP` dan yaxshiroq).
 
-### INSERT (yaratish)
+## CRUD
 
 ```sql
-INSERT INTO users (name, email, age) 
+-- INSERT
+INSERT INTO users (name, email, age)
 VALUES ('Ali', 'ali@example.com', 25);
-```
 
-### SELECT (oqish)
-
-```sql
--- Hamma userlarni olish
+-- SELECT — barcha
 SELECT * FROM users;
 
--- Faqat kerakli ustunlar
-SELECT name, email FROM users;
+-- SELECT — filter bilan
+SELECT id, name, email FROM users WHERE age > 20 AND is_active = true;
 
--- Filter bilan
-SELECT * FROM users WHERE age > 20;
+-- SELECT — saralash va cheklash
+SELECT * FROM users ORDER BY name ASC LIMIT 10 OFFSET 20;
 
--- Saralash bilan
-SELECT * FROM users ORDER BY age DESC;
-
--- Cheklash bilan
-SELECT * FROM users LIMIT 10;
-```
-
-### UPDATE (yangilash)
-
-```sql
-UPDATE users 
-SET age = 26, name = 'Aliy' 
+-- UPDATE
+UPDATE users
+SET age = 26, name = 'Alisher'
 WHERE id = 1;
-```
 
-### DELETE (ochirish)
-
-```sql
+-- DELETE
 DELETE FROM users WHERE id = 3;
+
+-- TRUNCATE — barchasini o'chirish (DELETE'dan tez)
+TRUNCATE TABLE users;
 ```
 
-## Spring Boot da PostgreSQL
+## Ma'lumot turlari
 
-### application.properties
+| Tip | Nima uchun? |
+|-----|-------------|
+| `BIGSERIAL` / `BIGINT` | Primary key, ID |
+| `VARCHAR(n)` | Qisqa matn (email, ism) |
+| `TEXT` | Uzun matn (bio, tavsif) |
+| `INTEGER` / `BIGINT` | Butun son |
+| `DECIMAL(10,2)` | Pul miqdori |
+| `BOOLEAN` | true/false |
+| `TIMESTAMPTZ` | Sana + vaqt + timezone |
+| `DATE` | Faqat sana |
+| `UUID` | Universal unikal identifikator |
+| `JSONB` | JSON ma'lumot (PostgreSQL'ga xos) |
+
+## Spring Boot bilan ulash
 
 ```properties
+# application.properties
 spring.datasource.url=jdbc:postgresql://localhost:5432/mydb
 spring.datasource.username=postgres
-spring.datasource.password=123
+spring.datasource.password=${DB_PASSWORD}
 spring.datasource.driver-class-name=org.postgresql.Driver
 
 spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
-spring.jpa.hibernate.ddl-auto=update
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=false
 ```
 
-## Xulosa
+```xml
+<!-- pom.xml -->
+<dependency>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>runtime</scope>
+</dependency>
+```
 
-- PostgreSQL -> kuchli, ochiq kodli malumotlar bazasi
-- Jadval (Table) -> malumotlar saqlanadigan joy
-- CRUD -> CREATE, READ, UPDATE, DELETE
-- SQL -> malumotlar bazasi bilan gaplashish tili
-- Spring Boot + PostgreSQL -> JPA orqali ishlaydi
+## Docker bilan PostgreSQL
+
+Development uchun Docker eng qulay yondashuv:
+
+```yaml
+# docker-compose.yml
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+```bash
+docker-compose up -d postgres
+```
+
+## Foydali psql buyruqlari
+
+```bash
+psql -U postgres -d mydb    # Ulanish
+
+\dt                          # Jadvallarni ko'rish
+\d users                     # Jadval tuzilishini ko'rish
+\l                           # Ma'lumotlar bazalarini ko'rish
+\q                           # Chiqish
+```

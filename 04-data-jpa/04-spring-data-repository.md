@@ -1,243 +1,228 @@
-# Spring Data Repository - JpaRepository
+# Spring Data Repository — JpaRepository
 
-## Repository nima?
+Spring Data JPA'ning asosiy qulayligi — siz faqat interfeys yozasiz, Spring implementatsiyani avtomatik yaratadi.
 
-Repository - malumotlar bazasiga savol yuboradigan klass. Spring Data JPA bilan siz faqat interfeys yozasiz, implementatsiyani Spring qiladi.
+## JpaRepository
 
 ```java
-// Bu 1 ta satr kod = 20 ta query metodi
+// Bu 1 ta satr = 20+ tayyor metod
 public interface UserRepository extends JpaRepository<User, Long> {
-    // Hech qanday kod yozish shart emas!
+    // Bo'sh interfeys — hech narsa yozmasdan tayyor metodlar keladi
 }
 ```
 
-## JpaRepository qanday ishlaydi?
+`JpaRepository<User, Long>` — `User` entity, `Long` primary key turi.
 
-Spring Data JPA sizning interfeysingizni olib, uning implementatsiyasini avtomatik yaratadi.
+## Tayyor metodlar
 
 ```java
-// Siz yozasiz:
-public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByEmail(String email);
-}
+// CRUD
+userRepository.save(user);              // Saqlash yoki yangilash
+userRepository.findById(1L);            // Optional<User>
+userRepository.findAll();               // Barchasi
+userRepository.count();                 // Soni
+userRepository.existsById(1L);          // Mavjudligi
+userRepository.delete(user);            // O'chirish
+userRepository.deleteById(1L);          // ID bo'yicha o'chirish
+userRepository.deleteAll();             // Barchasini o'chirish
 
-// Spring avtomatik yaratadi:
-// public class UserRepositoryImpl implements UserRepository {
-//     public Optional<User> findByEmail(String email) {
-//         return entityManager.createQuery(
-//             "SELECT u FROM User u WHERE u.email = :email", User.class)
-//             .setParameter("email", email)
-//             .getResultStream()
-//             .findFirst();
-//     }
-// }
+// Pagination va Sorting
+userRepository.findAll(PageRequest.of(0, 20));
+userRepository.findAll(Sort.by("name").ascending());
+userRepository.findAll(PageRequest.of(0, 20, Sort.by("createdAt").descending()));
 ```
 
-## JpaRepository dan keladigan metodlar
+## Query metodlari — nom bo'yicha
 
-JpaRepository ni extend qilsangiz, bu metodlar oz-ozidan keladi:
-
-```java
-public interface UserRepository extends JpaRepository<User, Long> {
-    // === CRUD metodlari (CrudRepository dan) ===
-    // save(entity) -> saqlash yoki yangilash
-    // findById(id) -> Optional qaytaradi
-    // findAll() -> hammasini olish
-    // count() -> sonini olish
-    // delete(entity) -> ochirish
-    // deleteById(id) -> id boyicha ochirish
-    // existsById(id) -> mavjudligini tekshirish
-    
-    // === Pagination (PagingAndSortingRepository dan) ===
-    // findAll(Sort) -> saralash bilan
-    // findAll(Pageable) -> sahifalash bilan
-}
-```
-
-## Query metodlar - Nom orqali so'rov
-
-Spring Data JPA metod nomini oqib, SQL yozadi.
+Spring Data metod nomini o'qib, SQL yozadi:
 
 ```java
 public interface UserRepository extends JpaRepository<User, Long> {
-    
+
     // SELECT * FROM users WHERE email = ?
     Optional<User> findByEmail(String email);
-    
+
     // SELECT * FROM users WHERE name = ? AND email = ?
-    Optional<User> findByNameAndEmail(String name, String email);
-    
-    // SELECT * FROM users WHERE name = ? OR email = ?
-    List<User> findByNameOrEmail(String name, String email);
-    
+    List<User> findByNameAndEmail(String name, String email);
+
     // SELECT * FROM users WHERE age > ?
     List<User> findByAgeGreaterThan(int age);
-    
+
     // SELECT * FROM users WHERE age BETWEEN ? AND ?
     List<User> findByAgeBetween(int min, int max);
-    
-    // SELECT * FROM users WHERE name LIKE '%value%'
-    List<User> findByNameContaining(String keyword);
-    
-    // SELECT * FROM users WHERE email LIKE 'value%'
-    List<User> findByEmailStartingWith(String prefix);
-    
-    // SELECT * FROM users ORDER BY name ASC
-    List<User> findAllByOrderByNameAsc();
-    
-    // SELECT * FROM users WHERE active = true
-    List<User> findByIsActiveTrue();
-    
-    // SELECT COUNT(*) FROM users WHERE email = ?
+
+    // SELECT * FROM users WHERE name LIKE '%?%'
+    List<User> findByNameContainingIgnoreCase(String keyword);
+
+    // SELECT * FROM users WHERE active = true ORDER BY name ASC
+    List<User> findByActiveTrueOrderByNameAsc();
+
+    // SELECT * FROM users WHERE email = ? — true/false
     boolean existsByEmail(String email);
-    
-    // SELECT COUNT(*) FROM users WHERE age > ?
-    long countByAgeGreaterThan(int age);
-    
+
+    // SELECT COUNT(*) FROM users WHERE active = ?
+    long countByActive(boolean active);
+
     // DELETE FROM users WHERE email = ?
+    @Transactional
     void deleteByEmail(String email);
-    
-    // SELECT TOP 10 * FROM users ORDER BY created_at DESC
+
+    // SELECT * FROM users ORDER BY created_at DESC LIMIT 10
     List<User> findTop10ByOrderByCreatedAtDesc();
 }
 ```
 
-## @Query - JPQL va Native SQL
+## @Query — o'zingiz SQL yozish
 
-Agar metod nomi bilan ifodalash qiyin bolsa, ozingiz SQL yozasiz:
-
-### JPQL (Java Persistence Query Language)
+Metod nomi bilan ifodalash qiyin bo'lgan holatlarda:
 
 ```java
 public interface UserRepository extends JpaRepository<User, Long> {
-    
-    // JPQL - Entity nomi bilan ishlaydi
-    @Query("SELECT u FROM User u WHERE u.email = :email")
-    Optional<User> findByEmailJPQL(@Param("email") String email);
-    
-    // Murakkab query
-    @Query("SELECT u FROM User u WHERE u.age > :minAge AND u.isActive = true ORDER BY u.name")
-    List<User> findActiveUsersOlderThan(@Param("minAge") int age);
-    
-    // Faqat ma'lum ustunlarni olish
-    @Query("SELECT u.name, u.email FROM User u WHERE u.isActive = true")
-    List<Object[]> findActiveUserNamesAndEmails();
-}
-```
 
-### Native SQL
+    // JPQL — Entity nomi bilan
+    @Query("SELECT u FROM User u WHERE u.email = :email AND u.active = true")
+    Optional<User> findActiveByEmail(@Param("email") String email);
 
-```java
-public interface UserRepository extends JpaRepository<User, Long> {
-    
-    // Native SQL - jadval nomi bilan ishlaydi
-    @Query(value = "SELECT * FROM users WHERE email = :email", nativeQuery = true)
-    Optional<User> findByEmailNative(@Param("email") String email);
-    
-    // Murakkab native query
-    @Query(value = """
-        SELECT u.*, COUNT(o.id) as order_count
-        FROM users u
-        LEFT JOIN orders o ON u.id = o.user_id
-        GROUP BY u.id
-        HAVING COUNT(o.id) > :minOrders
-        """, nativeQuery = true)
-    List<User> findUsersWithMinOrders(@Param("minOrders") int minOrders);
-}
-```
+    // JPQL — JOIN bilan
+    @Query("SELECT u FROM User u JOIN FETCH u.orders WHERE u.id = :id")
+    Optional<User> findByIdWithOrders(@Param("id") Long id);
 
-## Modifying - UPDATE va DELETE
+    // Native SQL — jadval nomi bilan
+    @Query(value = "SELECT * FROM users WHERE created_at > :date", nativeQuery = true)
+    List<User> findRecentUsers(@Param("date") LocalDateTime date);
 
-```java
-public interface UserRepository extends JpaRepository<User, Long> {
-    
-    @Modifying  // UPDATE yoki DELETE query lar uchun
-    @Query("UPDATE User u SET u.isActive = false WHERE u.lastLoginAt < :date")
-    int deactivateInactiveUsers(@Param("date") LocalDateTime date);
-    
+    // Pagination bilan
+    @Query("SELECT u FROM User u WHERE u.active = true")
+    Page<User> findAllActive(Pageable pageable);
+
+    // UPDATE / DELETE — @Modifying shart
     @Modifying
-    @Query("DELETE FROM User u WHERE u.email = :email")
-    int deleteByEmail(@Param("email") String email);
+    @Transactional
+    @Query("UPDATE User u SET u.active = false WHERE u.lastLoginAt < :date")
+    int deactivateInactiveUsers(@Param("date") LocalDateTime date);
 }
 ```
 
-## Pagination - Sahifalash
-
-```java
-public interface UserRepository extends JpaRepository<User, Long> {
-    
-    // Sahifalab olish
-    Page<User> findAll(Pageable pageable);
-    
-    // Filter bilan sahifalash
-    @Query("SELECT u FROM User u WHERE u.isActive = true")
-    Page<User> findActiveUsers(Pageable pageable);
-    
-    // Saralash bilan
-    List<User> findByIsActiveTrue(Sort sort);
-}
-```
-
-Ishlatish:
+## Pagination — sahifalash
 
 ```java
 @Service
 public class UserService {
     private final UserRepository repository;
-    
-    public Page<UserResponse> getUsers(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("name").ascending());
+
+    public Page<UserResponse> getUsers(int page, int size, String sortBy) {
+        Pageable pageable = PageRequest.of(
+            page,
+            size,
+            Sort.by(sortBy).ascending()
+        );
+
         Page<User> userPage = repository.findAll(pageable);
-        
-        return userPage.map(user -> userMapper.toDto(user));
+
+        return userPage.map(user -> new UserResponse(
+            user.getId(),
+            user.getName(),
+            user.getEmail()
+        ));
     }
 }
 ```
 
-## Service + Repository birgalikda
+Controller'da:
+```java
+@GetMapping
+public Page<UserResponse> getUsers(
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size,
+    @RequestParam(defaultValue = "createdAt") String sortBy
+) {
+    return userService.getUsers(page, size, sortBy);
+}
+```
+
+Javob:
+```json
+{
+  "content": [...],
+  "totalElements": 150,
+  "totalPages": 8,
+  "number": 0,
+  "size": 20,
+  "first": true,
+  "last": false
+}
+```
+
+## Projection — kerakli maydonlarni olish
+
+Butun entity o'rniga faqat bir nechta maydon olish:
 
 ```java
-@Repository  // Spring: "Bu repository, malumotlar bazasi bilan ishlaydi"
+// Interface projection
+public interface UserSummary {
+    Long getId();
+    String getName();
+    String getEmail();
+}
+
+public interface UserRepository extends JpaRepository<User, Long> {
+    List<UserSummary> findAllProjectedBy();                  // Hamma foydalanuvchilar
+    Optional<UserSummary> findProjectedById(Long id);        // Bitta
+}
+```
+
+```java
+// DTO projection (@Query bilan)
+public record UserDto(Long id, String name, String email) {}
+
+@Query("SELECT new com.example.dto.UserDto(u.id, u.name, u.email) FROM User u")
+List<UserDto> findAllAsDtos();
+```
+
+## Service + Repository pattern
+
+```java
+@Repository  // Spring: "Bu bean malumotlar bazasi bilan ishlaydi"
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     boolean existsByEmail(String email);
 }
 
-@Service  // Spring: "Bu service, biznes logika"
+@Service
+@Transactional(readOnly = true)  // Default — faqat o'qish (tezroq)
 public class UserService {
+
     private final UserRepository repository;
-    
-    public UserService(UserRepository repository) {
+    private final UserMapper mapper;
+    private final PasswordEncoder passwordEncoder;
+
+    public UserService(UserRepository repository, UserMapper mapper, PasswordEncoder passwordEncoder) {
         this.repository = repository;
+        this.mapper = mapper;
+        this.passwordEncoder = passwordEncoder;
     }
-    
-    @Transactional
-    public UserResponse register(CreateUserRequest request) {
-        // 1. Email mavjudligini tekshirish
+
+    public Page<UserResponse> findAll(int page, int size) {
+        return repository.findAll(PageRequest.of(page, size, Sort.by("name")))
+                         .map(mapper::toResponse);
+    }
+
+    public UserResponse findById(Long id) {
+        return repository.findById(id)
+                         .map(mapper::toResponse)
+                         .orElseThrow(() -> new UserNotFoundException(id));
+    }
+
+    @Transactional  // O'zgartirish uchun alohida belgilash
+    public UserResponse create(CreateUserRequest request) {
         if (repository.existsByEmail(request.getEmail())) {
             throw new DuplicateEmailException(request.getEmail());
         }
-        
-        // 2. Entity yaratish
-        User user = new User();
-        user.setName(request.getName());
-        user.setEmail(request.getEmail());
+        User user = mapper.toEntity(request);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        
-        // 3. Saqlash
-        User saved = repository.save(user);
-        
-        // 4. DTO ga aylantirish
-        return userMapper.toDto(saved);
+        return mapper.toResponse(repository.save(user));
     }
 }
 ```
 
-## Xulosa
-
-- JpaRepository -> extended qilsangiz, kop metodlar oz-ozidan keladi
-- Query metodlar -> metod nomi orqali SQL yozish
-- @Query -> ozingiz SQL yozish
-- @Modifying -> UPDATE/DELETE uchun
-- Pageable -> sahifalash
-- Repository faqat malumotlar bazasi bilan ishlaydi, Service biznes logika bilan
+Qoida: `Service` `@Transactional(readOnly = true)` bilan, o'zgartiruvchi metodlar `@Transactional` bilan.

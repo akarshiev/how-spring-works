@@ -1,17 +1,15 @@
 # REST API
 
-REST API - bu ikki dasturning Internet orqali gaplashishi uchun qoidalar toplami.
+HTTP orqali ma'lumot almashinuvi — Spring Boot'ning asosiy qo'llanilishi.
 
 ## Mavzular
 
-1. **01-http-basics.md** -> HTTP metodlari va status kodlari
-2. **02-controller-layer.md** -> @RestController va @RequestMapping
-3. **03-request-response.md** -> @RequestBody, @ResponseBody, DTO
-4. **04-exception-handling.md** -> @ControllerAdvice va @ExceptionHandler
-5. **05-validation.md** -> @Valid, Bean Validation
+`01-http-basics.md` — HTTP metodlari, status kodlari, URL dizayn qoidalari.
 
-## REST API nima?
+`02-controller-layer.md` — `@RestController`, `@PathVariable`, `@RequestParam`, `@RequestHeader`.
 
-Oddiy qilib: **Bir dasturning ikkinchi dasturga malumot yuborishi va javob olishi**.
+`03-request-response.md` — DTO pattern, `@RequestBody`, `@ResponseBody`, Jackson, ResponseEntity.
 
-Misol: Telefoningizdagi ob-havo ilovasi, serverdan malumot oladi. Bu REST API orqali boladi.
+`04-exception-handling.md` — `@RestControllerAdvice`, custom exception'lar, ErrorResponse.
+
+`05-validation.md` — Bean Validation, `@Valid`, custom validator, guruhli validation.

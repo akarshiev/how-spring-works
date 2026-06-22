@@ -1,21 +1,29 @@
-# Hissa qoshish qoidalari
+# Hissa qo'shish
 
-Ushbu loyiha Spring Frameworkni organuvchilar uchun yaratilgan. Agar siz ham hissa qoshmoqchi bolsangiz, quyidagi qoidalarga amal qiling.
+Xato topsangiz yoki qo'shimcha mavzu taklif qilmoqchi bo'lsangiz — xush kelibsiz.
 
-## Qanday hissa qoshish mumkin?
+## Issue ochish
 
-1. **Fork** qiling - loyihani ozingizning GitHub hisobingizga kochiring
-2. **Branchni** yarating - yangi ozgarishlar uchun alohida branch oching
-   - Masalan: `git checkout -b feat/new-lesson`
-3. **Ozgarishlarni** qiling - darslarni yozing yoki xatolarni tuzating
-4. **Pull Request** yuboring - ozgarishlaringizni taklif qiling
+Xato topganingizda GitHub'da Issue oching:
 
-## Qoidalar
+- Qaysi fayldagi qaysi qism noto'g'ri
+- To'g'ri versiyasi nima bo'lishi kerak
+- Agar texnik xato bo'lsa — Spring dokumentatsiyasi havola
 
-- Har bir dars alohida `.md` faylda bolsin
-- Fayl nomlari: `01-topic-name.md` -> `02-topic-name.md` formatida
-- Misollar koproq bolsin, nazariya qisqa bolsin
-- Emoji ishlatish mumkin emas
-- Uzun chiziq `--` ishlatmang, `->` belgisidan foydalaning
-- Yangi boshlovchilar tushunadigan tilda yozing
-- Agar kod misoli keltirsangiz, u ishlatilgan Spring versiyasini yozib qoying
+## Pull Request
+
+Tuzatish yozmoqchi bo'lsangiz:
+
+```bash
+git clone https://github.com/akarshiev/how-spring-works
+cd how-spring-works
+git checkout -b fix/ioc-container-explanation
+# O'zgarishlarni kiriting
+git commit -m "fix: IoC Container tushuntirishini aniqlashtirish"
+git push origin fix/ioc-container-explanation
+# GitHub'da Pull Request oching
+```
+
+## Uslub qoidalari
+
+O'zbek tilida yozing, texnik atamalar inglizcha qolsin (`@Autowired`, `Bean`, `Entity`). Apostroflar to'g'ri: `bo'ladi`, `o'zgartirish`, `qo'shish`. Emoji ishlatilmasin. Har bir tushuncha uchun ishlaydigan kod misoli bo'lsin.

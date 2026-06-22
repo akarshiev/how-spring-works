@@ -1,162 +1,74 @@
-# Security Configuration - SecurityFilterChain va HttpSecurity
+# Security Config — SecurityFilterChain va HttpSecurity
 
-## SecurityFilterChain nima?
-
-SecurityFilterChain = Spring Security ni sozlash uchun asosiy klass.
-
-Bu klass yordamida siz:
-
-- Qaysi URL larga ruxsat borligini
-- Qanday login turi ishlatilishini
-- CSRF yoqilganmi yoki yoqmi
-- Va boshqa sozlamalarni belgilaysiz
+`SecurityFilterChain` — Spring Security konfiguratsiyasining asosiy elementi. Qaysi URL'lar himoyalanganligi, qanday autentifikatsiya ishlatilishini bu yerda belgilaysiz.
 
 ## Asosiy konfiguratsiya
 
 ```java
 @Configuration
-@EnableWebSecurity  // Spring Security ni yoqish
+@EnableWebSecurity
 public class SecurityConfig {
-    
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+            // URL'larga ruxsat
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/home", "/login", "/register").permitAll() // hamma kirishi mumkin
-                .requestMatchers("/admin/**").hasRole("ADMIN")                    // faqat admin
-                .requestMatchers("/user/**").hasRole("USER")                      // faqat user
-                .anyRequest().authenticated()                                     // qolgan hamma narsa login talab
+                .requestMatchers("/", "/home").permitAll()
+                .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                .anyRequest().authenticated()
             )
+            // Login formasi (web ilovalar uchun)
             .formLogin(form -> form
-                .loginPage("/login")          // login sahifasi
-                .defaultSuccessUrl("/home")   // muvaffaqiyatli login dan keyin
+                .loginPage("/login")
+                .defaultSuccessUrl("/dashboard")
                 .permitAll()
             )
+            // Logout
             .logout(logout -> logout
-                .logoutSuccessUrl("/login")   // logout dan keyin
+                .logoutSuccessUrl("/login?logout")
                 .permitAll()
             );
-        
+
         return http.build();
     }
 }
 ```
 
-## Hamma URL larni himoya qilish
+## REST API uchun konfiguratsiya
 
-| Sozlamalar | Nima qiladi? |
-|-----------|-------------|
-| `.permitAll()` | Hech qanday tekshirish yo'q |
-| `.authenticated()` | Faqat login qilganlar uchun |
-| `.hasRole("ADMIN")` | Faqat ADMIN roli bilan |
-| `.hasAnyRole("USER", "ADMIN")` | Bir nechta roldan biri |
-| `.hasAuthority("WRITE")` | Muayyan authority bilan |
-| `.denyAll()` | Hech kimga ruxsat yo'q |
-
-## PasswordEncoder - Parollarni shifrlash
-
-```java
-@Bean
-public PasswordEncoder passwordEncoder() {
-    return new BCryptPasswordEncoder();  // BCrypt = kuchli shifrlash
-}
-```
-
-Ishlatish:
-
-```java
-@Service
-public class AuthService {
-    private final PasswordEncoder passwordEncoder;
-    
-    public AuthService(PasswordEncoder passwordEncoder) {
-        this.passwordEncoder = passwordEncoder;
-    }
-    
-    public User register(String username, String password) {
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(password));  // Parol shifrlanadi
-        return userRepository.save(user);
-    }
-}
-```
-
-## CSRF - Saytlararo soxta so'rov
-
-CSRF = Cross-Site Request Forgery. Bu boshqa saytdan sizning saytingizga yuborilgan soxta so'rovlardan himoya.
-
-```java
-@Bean
-public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    http
-        .csrf(csrf -> csrf
-            .disable()  // REST API larda ko'pincha off (JWT token ishlatilsa)
-        )
-        // ... qolgan sozlamalar
-}
-```
-
-**API larda** -> CSRF odatda OFF (JWT/Token ishlatiladi)
-**HTML formalarda** -> CSRF ON bolishi kerak
-
-## CORS - Boshqa domenlardan so'rov
-
-```java
-@Bean
-public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    http
-        .cors(cors -> cors
-            .configurationSource(corsConfigurationSource())
-        )
-        // ...
-}
-
-@Bean
-public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration config = new CorsConfiguration();
-    config.setAllowedOrigins(List.of("http://localhost:3000")); // Frontend domeni
-    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
-    config.setAllowedHeaders(List.of("*"));
-    
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    source.registerCorsConfiguration("/**", config);
-    return source;
-}
-```
-
-## To'liq konfiguratsiya misoli
+JWT bilan stateless REST API:
 
 ```java
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-    
+
+    private final JwtAuthenticationFilter jwtFilter;
+    private final UserDetailsService userDetailsService;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(AbstractHttpConfigurer::disable)
+        return http
+            .csrf(csrf -> csrf.disable())  // JWT bilan CSRF shart emas
             .cors(Customizer.withDefaults())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .requestMatchers("/api/users/**").hasAnyRole("USER", "ADMIN")
                 .anyRequest().authenticated()
             )
             .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // JWT uchun
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
             .authenticationProvider(authenticationProvider())
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
-        
-        return http.build();
+            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+            .build();
     }
-    
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-    
+
     @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
@@ -164,13 +76,125 @@ public class SecurityConfig {
         provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
+        throws Exception {
+        return config.getAuthenticationManager();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 }
 ```
 
-## Xulosa
+## URL'larga ruxsat qoidalari
 
-- SecurityFilterChain -> Spring Security ni sozlash uchun markaziy klass
-- authorizeHttpRequests -> URL larga ruxsat
-- PasswordEncoder -> parollarni shifrlash
-- CSRF -> REST API larda disable
-- CORS -> frontend domeniga ruxsat
+```java
+.authorizeHttpRequests(auth -> auth
+    // Aniq URL
+    .requestMatchers("/api/auth/login").permitAll()
+
+    // Wildcard — /api/public/ va pastidagi barcha
+    .requestMatchers("/api/public/**").permitAll()
+
+    // HTTP metod + URL
+    .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+    .requestMatchers(HttpMethod.POST, "/api/products").hasRole("ADMIN")
+
+    // Rol bo'yicha
+    .requestMatchers("/api/admin/**").hasRole("ADMIN")
+    .requestMatchers("/api/users/**").hasAnyRole("USER", "ADMIN")
+
+    // Authority bo'yicha
+    .requestMatchers("/api/reports").hasAuthority("READ_REPORTS")
+
+    // Faqat to'liq autentifikatsiya (Remember Me emas)
+    .requestMatchers("/api/settings").fullyAuthenticated()
+
+    // Qolgan hamma narsa — login kerak
+    .anyRequest().authenticated()
+)
+```
+
+Qoidalar yuqoridan pastga tekshiriladi — birinchi mos kelgani ishlaydi.
+
+## PasswordEncoder
+
+Parolni hech qachon ochiq saqlamang:
+
+```java
+@Bean
+public PasswordEncoder passwordEncoder() {
+    return new BCryptPasswordEncoder();  // Work factor default = 10
+}
+
+// Ishlatish
+String encoded = passwordEncoder.encode("myPassword");
+// → "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+
+boolean matches = passwordEncoder.matches("myPassword", encoded);  // true
+```
+
+BCrypt har safar boshqacha hash hosil qiladi — xavfsiz. Brute force'ga chidamli.
+
+## CORS — boshqa domenlardan so'rov
+
+Frontend (localhost:3000) va backend (localhost:8080) alohida bo'lsa:
+
+```java
+@Bean
+public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration config = new CorsConfiguration();
+    config.setAllowedOrigins(List.of(
+        "http://localhost:3000",  // Development
+        "https://myapp.uz"        // Production
+    ));
+    config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    config.setAllowedHeaders(List.of("*"));
+    config.setExposedHeaders(List.of("Authorization"));
+    config.setAllowCredentials(true);
+    config.setMaxAge(3600L);
+
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", config);
+    return source;
+}
+```
+
+## CSRF — qachon o'chirish kerak?
+
+CSRF (Cross-Site Request Forgery) himoyasi session asosida ishlaydi. Stateless JWT API'da CSRF kerak emas chunki:
+
+- Cookie ishlatilmaydi — `Authorization` header ishlatiladi
+- Soxta sayt `Authorization` headerini o'zgirtira olmaydi
+
+```java
+// REST API + JWT — CSRF o'chirish to'g'ri
+.csrf(csrf -> csrf.disable())
+
+// HTML form + Session — CSRF yoqilgan bo'lishi kerak
+.csrf(Customizer.withDefaults())
+```
+
+## 401 va 403 xatolarini sozlash
+
+```java
+http
+    .exceptionHandling(ex -> ex
+        .authenticationEntryPoint((request, response, authException) -> {
+            // 401 — login qilinmagan
+            response.setStatus(HttpStatus.UNAUTHORIZED.value());
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\": \"Login qilish talab etiladi\"}");
+        })
+        .accessDeniedHandler((request, response, accessDeniedException) -> {
+            // 403 — ruxsat yo'q
+            response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\": \"Ruxsat yo'q\"}");
+        })
+    )
+```

@@ -1,92 +1,84 @@
-# Embedded Server - Tomcat ichki qanday ishlaydi?
+# Embedded Server — Tomcat ichki qanday ishlaydi?
 
-## Embedded server nima?
+Spring Boot ilovasini ishga tushirsangiz, alohida server o'rnatmasdan ham web ilova ishlaydi. Bu embedded (ichki) server mexanizmi tufayli.
 
-Embedded = ichiga joylashtirilgan
+## Odatiy vs Embedded server
 
-Spring Boot ilovasining ICHIDA Tomcat server bor. Siz alohida server o'rnatishingiz shart emas.
+**Odatiy yondashuv (Spring Boot'siz):**
+1. Tomcat'ni alohida yuklab, o'rnatish
+2. Ilovani `.war` sifatida build qilish
+3. `.war` faylni Tomcat'ning `webapps/` papkasiga joylash
+4. Tomcat'ni qayta ishga tushirish
 
-## Odatiy vs Embedded
-
-### Odatiy usul (Spring Bootsiz):
-
-1. Tomcat ni alohida yuklab olasiz
-2. Tomcat ni o'rnatasiz
-3. Ilovangizni .war qilib build qilasiz
-4. .war faylni Tomcat ichiga tashlaysiz
-5. Tomcat ni ishga tushirasiz
-
-### Embedded usul (Spring Boot bilan):
-
-1. `java -jar my-app.jar` yozasiz
-2. Tomcat ichkarida oz-ozidan ishga tushadi
+**Embedded yondashuv (Spring Boot bilan):**
+```bash
+java -jar my-app.jar  # Server ichkarida, hamma narsa tayyor
+```
 
 ## Qanday ishlaydi?
 
-Spring Bootda Tomcat starter bor:
+`spring-boot-starter-web` qo'shilganda, Tomcat ham dependency sifatida keladi:
 
 ```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-tomcat</artifactId>
-</dependency>
+spring-boot-starter-web
+  +-- spring-boot-starter-tomcat  <- Tomcat bu yerda
+        +-- tomcat-embed-core
+        +-- tomcat-embed-el
+        +-- tomcat-embed-websocket
 ```
 
-Bu starter Tomcat ni ilova ichiga joylashtiradi. Siz hatto Tomcat borligini sezmaysiz.
+Spring Boot ishga tushganda `TomcatServletWebServerFactory` bean'i Tomcat'ni yaratadi va konfiguratsiya qiladi:
 
-## Tomcat ni Spring Boot qanday ishga tushiradi?
-
-1. Spring Boot ishga tushadi
-2. TomcatAutoConfiguration klassi ishlaydi
-3. Tomcat server yaratiladi va sozlanadi
-4. DispatcherServlet yaratiladi
-5. Tomcat 8080 portda ishga tushadi
-
-```java
-// Spring Boot ichida taxminan shunday ishlaydi
-@Configuration
-public class EmbeddedTomcat {
-    
-    @Bean
-    public TomcatServletWebServerFactory tomcatFactory() {
-        TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
-        factory.setPort(8080);  // Default port
-        factory.setContextPath("/api");  // Context path
-        
-        // SSL sozlamalari
-        factory.addConnectorCustomizers(connector -> {
-            connector.setProperty("compression", "on");
-        });
-        
-        return factory;
-    }
-}
+```
+SpringApplication.run() chaqiriladi
+         |
+         v
+ApplicationContext yaratiladi
+         |
+         v
+TomcatAutoConfiguration ishlaydi
+         |
+         v
+Tomcat server yarailadi va 8080 portda ishga tushadi
+         |
+         v
+DispatcherServlet Tomcat'ga ro'yxatdan o'tadi
+         |
+         v
+Ilova HTTP so'rovlarni qabul qilishga tayyor
 ```
 
-## Portni ozgartirish
+## Portni o'zgartirish
 
 ```properties
 # application.properties
 server.port=9090
-server.servlet.context-path=/myapp
+server.servlet.context-path=/api
+
+# Random port (test uchun foydali)
+server.port=0
 ```
 
-Yoki:
-
 ```java
+// Yoki konfiguratsiya orqali
 @Component
-public class CustomContainer implements WebServerFactoryCustomizer<TomcatServletWebServerFactory> {
+public class ServerConfig implements WebServerFactoryCustomizer<TomcatServletWebServerFactory> {
+
     @Override
     public void customize(TomcatServletWebServerFactory factory) {
         factory.setPort(9090);
-        factory.setContextPath("/myapp");
+        factory.setContextPath("/api");
+        // Thread pool sozlamalari
+        factory.addConnectorCustomizers(connector -> {
+            connector.setAttribute("maxThreads", 200);
+        });
     }
 }
 ```
 
-## Tomcat ni Undertow yoki Jetty ga almashtirish
+## Tomcat'ni Undertow bilan almashtirish
 
-Spring Boot Tomcat default. Agar boshqa server kerak bolsa:
+Undertow yuqori yuklamali ilovalar uchun yaxshiroq performance ko'rsatadi:
 
 ```xml
 <dependency>
@@ -106,34 +98,75 @@ Spring Boot Tomcat default. Agar boshqa server kerak bolsa:
 </dependency>
 ```
 
+Kod o'zgartirishsiz — faqat dependency o'zgartirish yetarli.
+
 ## HTTPS sozlash
 
 ```properties
-server.port=443
+server.port=8443
 server.ssl.key-store=classpath:keystore.p12
-server.ssl.key-store-password=secret
+server.ssl.key-store-password=${SSL_PASSWORD}
 server.ssl.key-store-type=PKCS12
-server.ssl.key-alias=tomcat
+server.ssl.key-alias=my-app
 ```
 
-## Server ichida nima boladi?
+```java
+// HTTP'ni HTTPS'ga yo'naltirish
+@Configuration
+public class HttpsConfig {
+
+    @Bean
+    public TomcatServletWebServerFactory servletContainer() {
+        TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory() {
+            @Override
+            protected void postProcessContext(Context context) {
+                SecurityConstraint constraint = new SecurityConstraint();
+                constraint.setUserConstraint("CONFIDENTIAL");
+                SecurityCollection collection = new SecurityCollection();
+                collection.addPattern("/*");
+                constraint.addCollection(collection);
+                context.addConstraint(constraint);
+            }
+        };
+
+        factory.addAdditionalTomcatConnectors(httpConnector());
+        return factory;
+    }
+
+    private Connector httpConnector() {
+        Connector connector = new Connector(TomcatServletWebServerFactory.DEFAULT_PROTOCOL);
+        connector.setScheme("http");
+        connector.setPort(8080);
+        connector.setSecure(false);
+        connector.setRedirectPort(8443);
+        return connector;
+    }
+}
+```
+
+## So'rov qanday yo'l bosadi?
 
 ```
-Spring Boot ilovasi
-      |
-      v
-   Tomcat (ichki)
-      |
-      +-- HTTP so'rovni qabul qiladi
-      +-- DispatcherServlet ga yuboradi
-      +-- DispatcherServlet @Controller ga yuboradi
-      +-- Javobni qaytaradi
+HTTP so'rov keladi (GET /api/users/1)
+         |
+         v
+Tomcat (Connector) so'rovni qabul qiladi
+         |
+         v
+Spring Security filterlari ishlaydi
+         |
+         v
+DispatcherServlet so'rovni qabul qiladi
+         |
+         v
+Handler Mapping kerakli Controller'ni topadi
+         |
+         v
+UserController.getUser(1) chaqiriladi
+         |
+         v
+Javob JSON sifatida qaytadi
+         |
+         v
+Tomcat javobni client'ga yuboradi
 ```
-
-## Xulosa
-
-- Embedded server = ilova ichidagi server
-- Spring Boot default Tomcat bilan keladi
-- Alohida server o'rnatish shart emas
-- `java -jar` bilan to'g'ridan-to'g'ri web ilova ishlaydi
-- Agar kerak bo'lsa, Undertow yoki Jetty ga almashtirish mumkin

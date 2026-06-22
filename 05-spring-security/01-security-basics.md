@@ -1,88 +1,123 @@
-# Security Basics - Authentication vs Authorization
+# Security Basics — Authentication va Authorization
+
+Spring Security ilovangizni himoya qiluvchi framework. Har bir so'rovni tekshiradi: "Bu kishi kim? Nima qila oladi?"
 
 ## Ikki asosiy tushuncha
 
-Spring Security da ikkita eng muhim tushuncha bor:
+### Authentication — Kim bu?
 
-### Authentication - Kim bu?
+Foydalanuvchi identifikatsiyasi. "Siz kimligingizni isboting."
 
-"Sen kimsan?" degan savolga javob.
+```
+Foydalanuvchi: "Ali man, parolim 12345"
+Server:        "Tekshirdim — to'g'ri. Siz Alisiz. Kiruvingiz mumkin."
+```
 
-- Foydalanuvchi login va parol yuboradi
-- Spring tekshiradi: "Bu login va parol tog'rimi?"
-- Agar togri bolsa -> "Siz Alisiz" (authentication boldi)
+Autentifikatsiya usullari: username/password, JWT token, OAuth2, API key, biometrik.
 
-### Authorization - Nima qila olasan?
+### Authorization — Nima qila olasiz?
 
-"Sen nima qila olasan?" degan savolga javob.
+Autentifikatsiyadan keyin — nima qilish ruxsati borligini tekshirish.
 
-- Foydalanuvchi "/admin" sahifasiga kirmoqchi
-- Spring tekshiradi: "Bu foydalanuvchi adminmi?"
-- Agar admin bolmasa -> "Sizga ruxsat yoq" (authorization boldi)
+```
+Ali: "Admin panelini ochmoqchiman"
+Server: "Siz autentifikatsiya bo'lgansiz, lekin admin emassiz. Ruxsat yo'q."
+```
 
-## Real hayotda
+Autentifikatsiya → "Siz Alisiz" → true/false  
+Authorization → "Siz admin sahifasini ko'ra olasizmi?" → true/false
 
-Tasavvur qiling, siz klubga kirmoqchisiz:
+## Spring Security Filter Chain
 
-1. **Authentication:** "Passportingizni korsating" -> Pasport tekshiriladi -> "Siz Alisiz, kirishingiz mumkin"
-2. **Authorization:** "VIP zonga kirmoqchi edim" -> "Kechirasiz, siz VIP emassiz, kira olmaysiz"
-
-## Spring Security qanday ishlaydi?
-
-Spring Security filterlar orqali ishlaydi. Har bir so'rov bir nechta filterdan otadi.
+Spring Security filterlar zanjiri orqali ishlaydi. Har bir HTTP so'rov bir nechta filterdan o'tadi:
 
 ```
 HTTP So'rov
-    |
-    v
-SecurityFilterChain (filterlar zanjiri)
-    |
-    +-- 1. SecurityContextHolderFilter (kontekstni sozlaydi)
-    +-- 2. UsernamePasswordAuthenticationFilter (login formani tekshiradi)
-    +-- 3. BasicAuthenticationFilter (Basic Auth ni tekshiradi)
-    +-- 4. ExceptionTranslationFilter (xatolarni tarjima qiladi)
-    +-- 5. AuthorizationFilter (ruxsatni tekshiradi)
-    |
-    v
-    Controller (agar hamma filterdan o'tgan bolsa)
+     |
+     v
+[SecurityContextPersistenceFilter]  ← mavjud autentifikatsiyani tiklash
+     |
+     v
+[UsernamePasswordAuthenticationFilter]  ← login formani tekshirish
+     |
+     v
+[BearerTokenAuthenticationFilter]  ← JWT tokenni tekshirish
+     |
+     v
+[ExceptionTranslationFilter]  ← 401/403 xatolarni tarjima qilish
+     |
+     v
+[AuthorizationFilter]  ← ruxsatni tekshirish
+     |
+     v
+Controller  ← faqat barcha filterdan o'tsa
 ```
 
-## Security Context - Foydalanuvchi malumotlari
+## SecurityContext — kim kirganini esda saqlash
 
-Foydalanuvchi autentifikatsiyadan o'tgandan keyin, uning malumotlari SecurityContext da saqlanadi.
+Autentifikatsiyadan o'tgan foydalanuvchi ma'lumotlari `SecurityContext`'da saqlanadi (thread-local):
 
 ```java
-// Foydalanuvchi malumotlarini olish
+// Hozirgi foydalanuvchini olish
+Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+String username = auth.getName();                          // "ali"
+Collection<?> authorities = auth.getAuthorities();        // [ROLE_USER]
+boolean isAuthenticated = auth.isAuthenticated();         // true
+
+// Controller'da qulay usul
 @GetMapping("/me")
-public String currentUser() {
-    // 1-usul: SecurityContextHolder dan
-    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    String username = auth.getName();
-    
-    // 2-usul: @AuthenticationPrincipal bilan
-    return username;
-}
-
-@GetMapping("/me2")
-public String currentUser(@AuthenticationPrincipal UserDetails userDetails) {
-    return userDetails.getUsername();
+public UserResponse currentUser(@AuthenticationPrincipal UserDetails userDetails) {
+    return userService.findByUsername(userDetails.getUsername());
 }
 ```
 
-## Principal - Foydalanuvchini ifodalash
+## Rollar va Huquqlar (Roles vs Authorities)
+
+Spring Security'da ikkita tushuncha bor:
+
+**Role** — `ROLE_` prefiksi bilan: `ROLE_USER`, `ROLE_ADMIN`. `hasRole("ADMIN")` → `ROLE_ADMIN` ni tekshiradi.
+
+**Authority** — ixtiyoriy string: `"READ_USERS"`, `"WRITE_PRODUCTS"`. `hasAuthority("READ_USERS")` ni tekshiradi.
 
 ```java
-// Principal = hozirgi foydalanuvchi
-Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+// URL'ga ruxsat
+.requestMatchers("/admin/**").hasRole("ADMIN")        // ROLE_ADMIN kerak
+.requestMatchers("/api/users").hasAuthority("READ_USERS")  // Aniq authority
 
-authentication.getName()      // username
-authentication.getAuthorities() // roller (ROLE_USER, ROLE_ADMIN)
-authentication.isAuthenticated() // login qilganmi?
+// Metod darajasida
+@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+@PreAuthorize("hasAuthority('WRITE')")
 ```
 
-## Oddiy qilib aytganda:
+## Oddiy konfiguratsiya
 
-- **Authentication** -> login va parol tekshirish
-- **Authorization** -> ruxsatni tekshirish
-- **SecurityContext** -> hozirgi foydalanuvchi malumotlari saqlanadigan joy
-- **Filter** -> har bir so'rovni tekshiruvchi
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/auth/**").permitAll()     // Login/register — hamma
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()                    // Qolgan — login kerak
+            )
+            .csrf(csrf -> csrf.disable())  // REST API'da odatda o'chiriladi
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)  // JWT uchun
+            );
+
+        return http.build();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();  // Parolni shifrlash
+    }
+}
+```
+
+Keyingi bo'limlarda `SecurityFilterChain`, JWT va `UserDetailsService` batafsil ko'riladi.
